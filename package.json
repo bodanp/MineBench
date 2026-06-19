@@ -1,0 +1,32 @@
+{
+  "name": "minebench",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "bot": "node bot/bot.js",
+    "agent": "node bot/llm_bot.js",
+    "race": "node bot/run_two.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eddywang4340/minebench.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/eddywang4340/minebench/issues"
+  },
+  "homepage": "https://github.com/eddywang4340/minebench#readme",
+  "dependencies": {
+    "@azure/identity": "^4.13.1",
+    "mineflayer": "^4.37.1",
+    "mineflayer-pathfinder": "^2.4.5",
+    "openai": "^6.43.0"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2"
+  }
+}

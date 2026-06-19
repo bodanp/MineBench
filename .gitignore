@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.log
+server/world/
+server/world_nether/
+server/world_the_end/
+server/logs/
+server/cache/
+server/paper.jar
+*.DS_Store
