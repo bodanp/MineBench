@@ -154,7 +154,7 @@ const TOOL_SCHEMAS = [
 const TOOL_IMPLS = {
   async move_to(bot, { x, y, z }) {
     try {
-      await navigate(bot, new goals.GoalBlock(x, y, z), { x, y, z })
+      await navigate(bot, new goals.GoalNear(x, y, z, 1), { x, y, z })
       return `Reached ${formatPos(bot.entity.position)}`
     } catch (e) {
       return `Failed to reach (${x},${y},${z}): ${e.message}`
@@ -259,9 +259,11 @@ const TOOL_IMPLS = {
         }
       }
     }
+    // Exclude the bot itself AND other players (including the human) — players are not
+    // resources or navigation targets, and surfacing them makes the model chase them.
     const entities = Object.values(bot.entities)
-      .filter(e => e !== bot.entity && bot.entity.position.distanceTo(e.position) < 16)
-      .map(e => ({ type: e.name || e.kind, dist: +bot.entity.position.distanceTo(e.position).toFixed(1) }))
+      .filter(e => e !== bot.entity && e.type !== 'player' && e.position && bot.entity.position.distanceTo(e.position) < 16)
+      .map(e => ({ type: e.name || e.kind || e.type, dist: +bot.entity.position.distanceTo(e.position).toFixed(1) }))
 
     return JSON.stringify({ nearby_blocks: nearbyBlocks, entities })
   },
@@ -338,6 +340,24 @@ async function faceXZ(bot, target) {
   await bot.look(Math.atan2(-dx, dz), 0, true)
 }
 
+// Last-resort unstick: dig the block(s) directly in front (feet + head height) so the
+// bot can ALWAYS get past a 1-2 block obstacle — if you can't go over it, go through it.
+async function digInFront(bot) {
+  const yaw = bot.entity.yaw
+  const fx = Math.round(-Math.sin(yaw))
+  const fz = Math.round(Math.cos(yaw))
+  if (fx === 0 && fz === 0) return 0
+  const isSolid = (n) => n && n !== 'air' && n !== 'cave_air' && n !== 'water' && n !== 'lava'
+  let dug = 0
+  for (const cell of [bot.entity.position.offset(fx, 1, fz), bot.entity.position.offset(fx, 0, fz)]) {
+    const b = bot.blockAt(cell)
+    if (b && isSolid(b.name) && bot.canDigBlock(b)) {
+      try { await bot.dig(b); dug++ } catch (_) { /* skip if it can't be dug right now */ }
+    }
+  }
+  return dug
+}
+
 // Walk forward for `ms`, hopping ONCE whenever forward progress stalls on the ground.
 // Holding jump the whole time makes the bot bounce off the ledge and never settle on it.
 // Returns how far (blocks) we actually travelled.
@@ -393,7 +413,7 @@ function gotoWithStallGuard(bot, goal, { stallMs = 2000, maxMs = 12000 } = {}) {
 async function navigate(bot, goal, target) {
   bot.pathfinder.setMovements(getMovements(bot))
   let lastErr
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
       await gotoWithStallGuard(bot, goal)
       return true
@@ -401,7 +421,9 @@ async function navigate(bot, goal, target) {
       lastErr = e
       try { bot.pathfinder.stop() } catch (_) {}
       if (target) { try { await faceXZ(bot, target) } catch (_) {} }
-      await walkForwardHopping(bot, 900)   // manual hop to clear the step pathfinder couldn't
+      // Escalating recovery: first just hop the step; if still wedged, dig through it.
+      if (attempt >= 1) { try { await digInFront(bot) } catch (_) {} }
+      await walkForwardHopping(bot, 1000)
     }
   }
   throw new Error((lastErr && lastErr.message) || 'could not navigate')
@@ -414,6 +436,70 @@ function formatPos(p) {
 // ─────────────────────────────────────────────
 // OBSERVATION (what state the LLM sees each turn)
 // ─────────────────────────────────────────────
+// Sparse, important blocks worth reporting with coordinates (common blocks like
+// dirt/grass/stone are omitted — they're everywhere and findable on demand).
+const RADAR_BLOCKS = [
+  'oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log',
+  'coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'diamond_ore', 'redstone_ore', 'lapis_ore',
+  'crafting_table', 'furnace', 'chest', 'water', 'lava'
+]
+
+function cardinalFromYaw(yaw) {
+  const deg = ((yaw * 180 / Math.PI) % 360 + 360) % 360   // 0=S, 90=W, 180=N, 270=E
+  if (deg < 45 || deg >= 315) return 'south'
+  if (deg < 135) return 'west'
+  if (deg < 225) return 'north'
+  return 'east'
+}
+
+function compass(dx, dz) {
+  const ns = dz > 0.5 ? 'south' : dz < -0.5 ? 'north' : ''
+  const ew = dx > 0.5 ? 'east' : dx < -0.5 ? 'west' : ''
+  return [ns, ew].filter(Boolean).join('-') || 'here'
+}
+
+// What's immediately around the bot, so it can reason about obstacles/steps/drops.
+function describeSurroundings(bot) {
+  const yaw = bot.entity.yaw
+  const fx = Math.round(-Math.sin(yaw))
+  const fz = Math.round(Math.cos(yaw))
+  const nameAt = (dx, dy, dz) => {
+    const b = bot.blockAt(bot.entity.position.offset(dx, dy, dz))
+    return b ? b.name : 'unknown'
+  }
+  const solid = (n) => n !== 'air' && n !== 'cave_air' && n !== 'water' && n !== 'unknown'
+  const frontFeet = nameAt(fx, 0, fz)
+  const frontHead = nameAt(fx, 1, fz)
+  return {
+    block_in_front: frontFeet,                        // at feet height, the way you face
+    block_in_front_head: frontHead,                   // at head height
+    can_step_up: solid(frontFeet) && !solid(frontHead),   // a 1-block step you can hop
+    blocked: solid(frontFeet) && solid(frontHead),        // 2-tall wall -> mine or go around
+    standing_on: nameAt(0, -1, 0),
+    above_head: nameAt(0, 2, 0),
+    drop_ahead: !solid(frontFeet) && nameAt(fx, -1, fz) === 'air'   // gap/cliff in front
+  }
+}
+
+// A coordinate "radar" of the nearest notable resource/hazard of each type.
+function nearestResources(bot) {
+  const mcData = require('minecraft-data')(bot.version)
+  const ids = RADAR_BLOCKS.map(n => mcData.blocksByName[n]?.id).filter(id => id !== undefined)
+  const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 64 })
+  const p = bot.entity.position
+  const best = {}
+  for (const pos of positions) {
+    const b = bot.blockAt(pos)
+    if (!b || best[b.name]) continue   // findBlocks is nearest-first: first hit per type is closest
+    best[b.name] = {
+      at: { x: pos.x, y: pos.y, z: pos.z },
+      dist: +p.distanceTo(pos).toFixed(1),
+      dir: compass(pos.x - p.x, pos.z - p.z)
+    }
+  }
+  return best
+}
+
 function getObservation(bot) {
   const p = bot.entity.position
   const inventory = {}
@@ -422,11 +508,14 @@ function getObservation(bot) {
   }
   return {
     position: { x: +p.x.toFixed(1), y: +p.y.toFixed(1), z: +p.z.toFixed(1) },
+    facing: cardinalFromYaw(bot.entity.yaw),
     health: bot.health,
     food: bot.food,
+    on_ground: bot.entity.onGround,
     inventory,
-    time_of_day: bot.time.timeOfDay,
-    on_ground: bot.entity.onGround
+    surroundings: describeSurroundings(bot),
+    nearby: nearestResources(bot),
+    time_of_day: bot.time.timeOfDay
   }
 }
 

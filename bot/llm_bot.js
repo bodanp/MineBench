@@ -4,6 +4,7 @@ const { pathfinder } = require('mineflayer-pathfinder')
 const { AzureOpenAI } = require('openai')
 const { DefaultAzureCredential, getBearerTokenProvider } = require('@azure/identity')
 const { TOOL_SCHEMAS, TOOL_IMPLS, getObservation } = require('./tools')
+const { MINECRAFT_KNOWLEDGE } = require('./knowledge')
 
 const BOT_NAME = process.env.BOT_NAME || 'MineBenchBot'
 const DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT
@@ -67,6 +68,8 @@ async function runAgentLoop() {
 
 Your goal: ${GOAL}
 
+${MINECRAFT_KNOWLEDGE}
+
 Available tools:
 - look_around(): scan nearby blocks and entities
 - move_to(x, y, z): pathfind to a coordinate (handles most obstacles automatically)
@@ -78,24 +81,75 @@ Available tools:
 - turn(direction), jump(), chat(message)
 - stop(): call ONLY when the goal is fully complete or you are truly stuck
 
+Each observation is your senses — READ it before acting:
+- "position" + "facing": where you are and which way you're looking.
+- "surroundings": the blocks right next to you — "block_in_front", "can_step_up", "blocked" (a 2-tall wall), "standing_on", "above_head", "drop_ahead".
+- "nearby": the nearest resources/hazards with coordinates ("at"), "dist" and "dir" — e.g. the closest tree, ore, your crafting_table, water/lava. Use these coordinates with move_to / mine_block instead of wandering blindly.
+- "inventory": what you have — track progress and prerequisites here.
+
 Rules:
-- Take ONE action at a time. After each action you receive the new world state (position, inventory, health).
-- Use the "inventory" field in each observation to track progress and check prerequisites.
+- Take ONE action at a time, then read the new observation before choosing the next.
+- If "nearby" already lists what you need, go to its coordinates. If it is NOT listed, explore first (move_to a point ~15 blocks away, then re-check "nearby") until it appears.
 - Respect crafting dependencies: logs -> planks -> sticks; place a crafting_table to make a wooden_pickaxe; mine cobblestone with a pickaxe to make a stone_pickaxe.
 - If a tool call returns an error, read it and try a different approach instead of repeating the same call.
-- If you stop making progress or get jammed against a block (your position barely changes between steps), turn to face it and use move_forward to hop over it, or mine_block the blocking block — do not keep repeating the same move_to.
+- If "surroundings.blocked" is true (a 2-tall wall) or your position barely changes between steps, mine_block the block in front or move_to around it. If "surroundings.can_step_up" is true, use move_forward to hop it. Do not keep repeating the same failing move_to.
+- Entities and players are NOT resources or destinations. Never navigate toward a player or your own past position — only travel to block coordinates (from "nearby") or to genuinely new, unexplored areas.
+- Never call the same tool with the same arguments twice in a row. If an action did not change your position or inventory, it FAILED — switch strategy (mine the blocking block, or explore a different direction) rather than repeating it.
 - Do not claim success early. Call stop() only when the goal item/condition is actually present in your inventory or state.`
     }
   ]
 
+  // Per-run instrumentation — the seed of the MineBench scorecard.
+  const metrics = { steps: 0, tool_calls: 0, tool_errors: 0, repeated_actions: 0, stuck_events: 0 }
+  const posHistory = []
+  let lastActionSig = null
+  let stuckCooldown = 0
+  let endReason = 'hit max steps'
+
+  const isErrorResult = (r) => /^(Failed|Unknown|No |Could not|Nothing|Tool .* threw)/.test(String(r))
+
+  const summarize = (reason) => {
+    const inv = {}
+    if (bot.entity) for (const it of bot.inventory.items()) inv[it.name] = (inv[it.name] || 0) + it.count
+    log('\n📊 ── MineBench run summary ──')
+    log(`   goal:            ${GOAL}`)
+    log(`   end reason:      ${reason}`)
+    log(`   steps:           ${metrics.steps}/${MAX_STEPS}`)
+    log(`   tool calls:      ${metrics.tool_calls} (errors: ${metrics.tool_errors}, repeats: ${metrics.repeated_actions})`)
+    log(`   stuck events:    ${metrics.stuck_events}`)
+    log(`   final inventory: ${JSON.stringify(inv)}`)
+  }
+
   for (let step = 0; step < MAX_STEPS; step++) {
+    if (!bot.entity) {
+      log('🔌 No longer connected to the server — ending run.')
+      endReason = 'disconnected'
+      break
+    }
+    metrics.steps = step + 1
     const obs = getObservation(bot)
     log(`\n--- Step ${step + 1} ---`)
     log('👀 Observation:', obs)
 
+    // Oscillation/loop detection: if net displacement over the last 8 steps is tiny, the
+    // agent is spinning its wheels — force a strategy change instead of looping forever.
+    let stuckNudge = ''
+    if (stuckCooldown > 0) stuckCooldown--
+    posHistory.push(bot.entity.position.clone())
+    if (posHistory.length > 8) posHistory.shift()
+    if (posHistory.length === 8 && stuckCooldown === 0) {
+      const net = posHistory[0].distanceTo(posHistory[posHistory.length - 1])
+      if (net < 4) {
+        metrics.stuck_events++
+        stuckCooldown = 4
+        stuckNudge = `\n\n⚠️ STUCK: over the last 8 steps you moved only ${net.toFixed(1)} blocks net — you are looping, not progressing. STOP repeating your last action. Do something DIFFERENT now: if "surroundings.block_in_front" is not air, mine_block it to clear the way; otherwise move_to a point at least 20 blocks away in a new direction, or look_around. Do NOT reuse a coordinate you already tried.`
+        log('⚠️ Oscillation detected — nudging the agent to change strategy.')
+      }
+    }
+
     messages.push({
       role: 'user',
-      content: `Current state:\n${JSON.stringify(obs)}\nWhat do you do next?`
+      content: `Current state:\n${JSON.stringify(obs)}${stuckNudge}\nWhat do you do next?`
     })
 
     let response
@@ -108,6 +162,7 @@ Rules:
       })
     } catch (e) {
       log('❌ LLM call failed:', e.message)
+      endReason = 'LLM call failed'
       break
     }
 
@@ -118,6 +173,7 @@ Rules:
 
     if (!msg.tool_calls || msg.tool_calls.length === 0) {
       log('⚠️ No tool call. Ending.')
+      endReason = 'model sent no tool call'
       break
     }
 
@@ -131,6 +187,11 @@ Rules:
       }
       log(`🛠️  Tool: ${name}(${JSON.stringify(args)})`)
 
+      metrics.tool_calls++
+      const sig = `${name}:${JSON.stringify(args)}`
+      if (sig === lastActionSig) metrics.repeated_actions++
+      lastActionSig = sig
+
       const impl = TOOL_IMPLS[name]
       let result
       if (!impl) {
@@ -142,6 +203,7 @@ Rules:
           result = `Tool ${name} threw an error: ${e.message}`
         }
       }
+      if (isErrorResult(result)) metrics.tool_errors++
       log(`   → ${result}`)
 
       messages.push({
@@ -152,13 +214,25 @@ Rules:
 
       if (result === '__STOP__') {
         log('🏁 Agent decided to stop.')
+        summarize('agent called stop()')
         return
       }
     }
   }
 
-  log('🛑 Hit max steps.')
+  summarize(endReason)
 }
 
 bot.on('error', err => console.error('❌', err))
-bot.on('kicked', reason => console.error('❌ Kicked:', reason))
+bot.on('kicked', (reason) => {
+  const text = typeof reason === 'string'
+    ? reason
+    : (reason?.value?.translate?.value || reason?.translate || JSON.stringify(reason))
+  console.error('❌ Kicked:', text)
+  if (String(text).includes('invalid_player_movement') || String(text).includes('moved')) {
+    console.error('   ↳ The server rejected the bot\'s movement (anti-cheat). In the SERVER folder edit spigot.yml ->')
+    console.error('      settings.moved-too-quickly-multiplier: 100.0')
+    console.error('      settings.moved-wrongly-threshold: 5.0')
+    console.error('     then restart the server. This is expected for programmatic bots.')
+  }
+})
