@@ -54,7 +54,20 @@ function describeSurroundings(bot) {
   }
 }
 
-// A coordinate "radar" of the nearest notable resource/hazard of each type.
+// A block is only reachable if at least one face touches air/water; otherwise it is
+// buried inside solid terrain and pathfinding/mining straight to it will fail.
+function isExposed(bot, pos) {
+  const faces = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+  for (const [dx, dy, dz] of faces) {
+    const b = bot.blockAt(pos.offset(dx, dy, dz))
+    if (b && (b.name === 'air' || b.name === 'cave_air' || b.name === 'water')) return true
+  }
+  return false
+}
+
+// A coordinate "radar" of the nearest notable resource/hazard of each type. Prefers the
+// nearest EXPOSED block (one the bot can actually reach) and tags each with "exposed", so
+// the model stops wasting turns pathing to ore buried inside rock.
 function nearestResources(bot) {
   const mcData = require('minecraft-data')(bot.version)
   const ids = RADAR_BLOCKS.map(n => mcData.blocksByName[n]?.id).filter(id => id !== undefined)
@@ -63,11 +76,17 @@ function nearestResources(bot) {
   const best = {}
   for (const pos of positions) {
     const b = bot.blockAt(pos)
-    if (!b || best[b.name]) continue   // findBlocks is nearest-first: first hit per type is closest
+    if (!b) continue
+    const exposed = isExposed(bot, pos)
+    const prev = best[b.name]
+    // findBlocks is nearest-first. Keep the closest EXPOSED hit; only fall back to a
+    // buried one when nothing exposed of that type exists in range.
+    if (prev && (prev.exposed || !exposed)) continue
     best[b.name] = {
       at: { x: pos.x, y: pos.y, z: pos.z },
       dist: +p.distanceTo(pos).toFixed(1),
-      dir: compass(pos.x - p.x, pos.z - p.z)
+      dir: compass(pos.x - p.x, pos.z - p.z),
+      exposed
     }
   }
   return best

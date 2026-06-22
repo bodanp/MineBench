@@ -37,12 +37,12 @@ Available tools:
 Each observation is your senses — READ it before acting:
 - "position" + "facing": where you are and which way you're looking.
 - "surroundings": the blocks right next to you — "block_in_front", "can_step_up", "blocked" (a 2-tall wall), "standing_on", "above_head", "drop_ahead".
-- "nearby": the nearest resources/hazards with coordinates ("at"), "dist" and "dir" — e.g. the closest tree, ore, your crafting_table, water/lava. Use these coordinates with move_to / mine_block instead of wandering blindly.
+- "nearby": the nearest resources/hazards with coordinates ("at"), "dist", "dir", and "exposed" — e.g. the closest tree, ore, your crafting_table, water/lava. "exposed": true means the block touches air, so you can path and mine straight to its "at" coords; "exposed": false means it is buried inside rock — do NOT move_to it, dig down/into the terrain toward it instead. Use these coordinates with move_to / mine_block instead of wandering blindly.
 - "inventory": what you have — track progress and prerequisites here.
 
 Rules:
 - Take ONE action at a time, then read the new observation before choosing the next.
-- If "nearby" already lists what you need, go to its coordinates. If it is NOT listed, explore first (move_to a point ~15 blocks away, then re-check "nearby") until it appears.
+- If "nearby" lists what you need with "exposed": true, go to its "at" coordinates. If that entry is "exposed": false (buried) or NOT listed, do not path straight to it — explore or dig toward it (move_to an open point ~15 blocks away, or dig down) and re-check "nearby" until an exposed one appears.
 - Respect crafting dependencies: logs -> planks -> sticks; place a crafting_table to make a wooden_pickaxe; mine cobblestone with a pickaxe to make a stone_pickaxe.
 - If a tool call returns an error, read it and try a different approach instead of repeating the same call.
 - If "surroundings.blocked" is true (a 2-tall wall) or your position barely changes between steps, mine_block the block in front or move_to around it. If "surroundings.can_step_up" is true, use move_forward to hop it. Do not keep repeating the same failing move_to.
@@ -53,11 +53,13 @@ Rules:
 
 function createAgent({ model, goal, toolSchemas }) {
   let messages = []
+  let pendingToolCalls = []   // tool_calls from the latest assistant msg still awaiting a tool reply
   return {
     model: model.name,
 
     start() {
       messages = [{ role: 'system', content: buildSystemPrompt(goal) }]
+      pendingToolCalls = []
     },
 
     async act(observation, nudge = '') {
@@ -67,9 +69,13 @@ function createAgent({ model, goal, toolSchemas }) {
       })
       const msg = await model.complete({ messages, tools: toolSchemas })
       messages.push(msg)
+      // The model may emit several tool_calls in one turn; we execute only the first, but
+      // the API REQUIRES a tool reply for EVERY id — track them all so recordResult can
+      // close out the rest (otherwise the next request 400s on the unanswered ids).
+      pendingToolCalls = (msg.tool_calls || []).slice()
 
       const thought = msg.content || ''
-      const call = msg.tool_calls && msg.tool_calls[0]
+      const call = pendingToolCalls[0]
       if (!call) return { thought, done: true, reason: 'no_tool_call' }
 
       let args = {}
@@ -79,6 +85,14 @@ function createAgent({ model, goal, toolSchemas }) {
 
     recordResult(toolCallId, result) {
       messages.push({ role: 'tool', tool_call_id: toolCallId, content: String(result) })
+      // Close out any sibling tool_calls from the same turn we chose not to run, so every
+      // tool_call_id has a response and the next request stays valid.
+      for (const c of pendingToolCalls) {
+        if (c.id && c.id !== toolCallId) {
+          messages.push({ role: 'tool', tool_call_id: c.id, content: 'Skipped: only one action is executed per step.' })
+        }
+      }
+      pendingToolCalls = []
     }
   }
 }
