@@ -1,0 +1,17 @@
+{
+  "id": "stone_pickaxe",
+  "title": "Make a stone pickaxe from scratch",
+  "goal": "Make a stone_pickaxe from scratch.",
+  "difficulty": 3,
+  "max_steps": 60,
+  "rationale": "Long-horizon: gather wood, craft planks/sticks/table, wooden pickaxe, mine stone, craft stone pickaxe. Tests tool-tier reasoning and crafting dependencies.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": [0, 64, 0],
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": { "inventory": { "stone_pickaxe": 1 } }
+}

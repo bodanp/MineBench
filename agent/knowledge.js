@@ -3,6 +3,8 @@
 // Curated early-game rules/systems injected into the agent's system prompt so the
 // model understands HOW Minecraft works before it starts calling tools.
 // Keep this concise — it is sent with every request.
+//
+// OWNER: Agent: Brain & Models (Role 4)
 // ─────────────────────────────────────────────
 const MINECRAFT_KNOWLEDGE = `MINECRAFT KNOWLEDGE BASE (early game):
 

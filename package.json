@@ -2,11 +2,11 @@
   "name": "minebench",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "bench.js",
   "scripts": {
-    "bot": "node bot/bot.js",
-    "agent": "node bot/llm_bot.js",
-    "race": "node bot/run_two.js"
+    "bench": "node bench.js",
+    "agent": "node bench.js",
+    "smoke": "node bot/bot.js"
   },
   "repository": {
     "type": "git",

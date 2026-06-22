@@ -1,0 +1,17 @@
+{
+  "id": "gather_wood",
+  "title": "Gather wood",
+  "goal": "Mine at least 3 oak_log.",
+  "difficulty": 1,
+  "max_steps": 40,
+  "rationale": "Smoke test: navigation + find/mine a single resource type.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": [0, 64, 0],
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": { "inventory": { "oak_log": 3 } }
+}

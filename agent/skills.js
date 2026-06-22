@@ -1,4 +1,19 @@
+// ─────────────────────────────────────────────
+// SKILLS — the agent's in-world capabilities (mineflayer tools) + reliable movement.
+//
+// OWNER: Agent: Skills & Movement (Role 3)
+//
+// Public API:
+//   TOOL_SCHEMAS                       -> array of OpenAI tool/function schemas
+//   executeAction(bot, { tool, args }) -> { result, ok, done }
+//   TOOL_IMPLS                         -> raw implementations (name -> async (bot,args)=>string)
+//
+// Add a new skill = add a schema to TOOL_SCHEMAS + an impl to TOOL_IMPLS. Each impl
+// returns a human-readable string; strings that start like an error are scored as failures.
+// ─────────────────────────────────────────────
 const { goals, Movements } = require('mineflayer-pathfinder')
+
+const STOP_SIGNAL = '__STOP__'
 
 // ─────────────────────────────────────────────
 // TOOL SCHEMAS (what the LLM sees)
@@ -11,11 +26,7 @@ const TOOL_SCHEMAS = [
       description: 'Walk/navigate to a specific (x, y, z) coordinate using pathfinding (handles obstacles).',
       parameters: {
         type: 'object',
-        properties: {
-          x: { type: 'number' },
-          y: { type: 'number' },
-          z: { type: 'number' }
-        },
+        properties: { x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' } },
         required: ['x', 'y', 'z']
       }
     }
@@ -27,9 +38,7 @@ const TOOL_SCHEMAS = [
       description: 'Walk straight forward (the way you are currently facing) for a few seconds, automatically hopping ONCE over any 1-block step in the way. Use this to get over a low obstacle or to get unstuck when move_to / mine_block leaves you jammed against a block. Turn to face the obstacle first.',
       parameters: {
         type: 'object',
-        properties: {
-          seconds: { type: 'number', description: 'How long to walk forward, 1-5. Default 1.5.' }
-        }
+        properties: { seconds: { type: 'number', description: 'How long to walk forward, 1-5. Default 1.5.' } }
       }
     }
   },
@@ -40,12 +49,7 @@ const TOOL_SCHEMAS = [
       description: 'Find and mine the nearest block of a given type within 32 blocks.',
       parameters: {
         type: 'object',
-        properties: {
-          block_type: {
-            type: 'string',
-            description: 'e.g., "oak_log", "stone", "dirt", "coal_ore"'
-          }
-        },
+        properties: { block_type: { type: 'string', description: 'e.g., "oak_log", "stone", "dirt", "coal_ore"' } },
         required: ['block_type']
       }
     }
@@ -89,9 +93,7 @@ const TOOL_SCHEMAS = [
       description: 'Equip an item from inventory to your hand (e.g. a pickaxe before mining stone/ore).',
       parameters: {
         type: 'object',
-        properties: {
-          item: { type: 'string', description: 'e.g., "wooden_pickaxe"' }
-        },
+        properties: { item: { type: 'string', description: 'e.g., "wooden_pickaxe"' } },
         required: ['item']
       }
     }
@@ -111,31 +113,21 @@ const TOOL_SCHEMAS = [
       description: 'Turn the bot to face a cardinal direction.',
       parameters: {
         type: 'object',
-        properties: {
-          direction: { type: 'string', enum: ['north', 'south', 'east', 'west'] }
-        },
+        properties: { direction: { type: 'string', enum: ['north', 'south', 'east', 'west'] } },
         required: ['direction']
       }
     }
   },
   {
     type: 'function',
-    function: {
-      name: 'jump',
-      description: 'Jump once.',
-      parameters: { type: 'object', properties: {} }
-    }
+    function: { name: 'jump', description: 'Jump once.', parameters: { type: 'object', properties: {} } }
   },
   {
     type: 'function',
     function: {
       name: 'chat',
       description: 'Send a message in game chat.',
-      parameters: {
-        type: 'object',
-        properties: { message: { type: 'string' } },
-        required: ['message']
-      }
+      parameters: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] }
     }
   },
   {
@@ -276,7 +268,7 @@ const TOOL_IMPLS = {
 
   async jump(bot) {
     bot.setControlState('jump', true)
-    await new Promise(r => setTimeout(r, 400))
+    await sleep(400)
     bot.setControlState('jump', false)
     return 'Jumped.'
   },
@@ -287,41 +279,36 @@ const TOOL_IMPLS = {
   },
 
   async stop() {
-    return '__STOP__'
+    return STOP_SIGNAL
   }
 }
 
-// Jump straight up and place a block under your feet at the apex (pillar up by 1).
-// Retries at each apex so a single place_block(0,0,0) call reliably climbs one block.
-async function pillarUp(bot, item, name) {
+// ─────────────────────────────────────────────
+// executeAction — the single seam the harness calls.
+// ─────────────────────────────────────────────
+const isErrorResult = (r) => /^(Failed|Unknown|No |Could not|Nothing|Tool .* threw)/.test(String(r))
+
+async function executeAction(bot, { tool, args }) {
+  const impl = TOOL_IMPLS[tool]
+  if (!impl) return { result: `Unknown tool: ${tool}`, ok: false, done: false }
+  let result
   try {
-    await bot.equip(item, 'hand')
-    const refBlock = bot.blockAt(bot.entity.position.offset(0, -1, 0))
-    if (!refBlock || refBlock.name === 'air') return `Nothing solid below to pillar up from.`
-    const baseY = Math.floor(bot.entity.position.y)
-    bot.setControlState('jump', true)
-    let placed = false
-    for (let i = 0; i < 16 && !placed; i++) {
-      await new Promise(r => setTimeout(r, 80))
-      // Only place once we've risen ~1 block so the new block isn't inside us.
-      if (bot.entity.position.y - baseY >= 1.0) {
-        try {
-          await bot.placeBlock(refBlock, { x: 0, y: 1, z: 0 })
-          placed = true
-        } catch (_) { /* not at a valid apex yet — keep bouncing and retry */ }
-      }
-    }
-    bot.setControlState('jump', false)
-    return placed
-      ? `Pillared up: placed ${name} beneath you.`
-      : `Could not place ${name} beneath you — try again or move to clearer ground.`
+    result = await impl(bot, args || {})
   } catch (e) {
-    bot.setControlState('jump', false)
-    return `Failed to pillar up with ${name}: ${e.message}`
+    result = `Tool ${tool} threw an error: ${e.message}`
   }
+  if (result === STOP_SIGNAL) return { result: 'Agent requested stop.', ok: true, done: true }
+  return { result, ok: !isErrorResult(result), done: false }
 }
 
+// ─────────────────────────────────────────────
+// MOVEMENT / NAVIGATION HELPERS (the reliability layer)
+// ─────────────────────────────────────────────
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+function formatPos(p) {
+  return `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`
+}
 
 // One shared, reusable Movements config (recreating it on every call is wasteful).
 function getMovements(bot) {
@@ -360,7 +347,6 @@ async function digInFront(bot) {
 
 // Walk forward for `ms`, hopping ONCE whenever forward progress stalls on the ground.
 // Holding jump the whole time makes the bot bounce off the ledge and never settle on it.
-// Returns how far (blocks) we actually travelled.
 async function walkForwardHopping(bot, ms) {
   const start = bot.entity.position.clone()
   bot.setControlState('forward', true)
@@ -409,7 +395,7 @@ function gotoWithStallGuard(bot, goal, { stallMs = 2000, maxMs = 12000 } = {}) {
 }
 
 // Navigate to a goal with automatic stuck-recovery: if pathfinder wedges against a
-// 1-block step, stop it, manually hop forward toward the target, then retry.
+// 1-block step, stop it, hop forward toward the target, then (if still wedged) dig through.
 async function navigate(bot, goal, target) {
   bot.pathfinder.setMovements(getMovements(bot))
   let lastErr
@@ -421,7 +407,6 @@ async function navigate(bot, goal, target) {
       lastErr = e
       try { bot.pathfinder.stop() } catch (_) {}
       if (target) { try { await faceXZ(bot, target) } catch (_) {} }
-      // Escalating recovery: first just hop the step; if still wedged, dig through it.
       if (attempt >= 1) { try { await digInFront(bot) } catch (_) {} }
       await walkForwardHopping(bot, 1000)
     }
@@ -429,94 +414,32 @@ async function navigate(bot, goal, target) {
   throw new Error((lastErr && lastErr.message) || 'could not navigate')
 }
 
-function formatPos(p) {
-  return `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`
-}
-
-// ─────────────────────────────────────────────
-// OBSERVATION (what state the LLM sees each turn)
-// ─────────────────────────────────────────────
-// Sparse, important blocks worth reporting with coordinates (common blocks like
-// dirt/grass/stone are omitted — they're everywhere and findable on demand).
-const RADAR_BLOCKS = [
-  'oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log',
-  'coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'diamond_ore', 'redstone_ore', 'lapis_ore',
-  'crafting_table', 'furnace', 'chest', 'water', 'lava'
-]
-
-function cardinalFromYaw(yaw) {
-  const deg = ((yaw * 180 / Math.PI) % 360 + 360) % 360   // 0=S, 90=W, 180=N, 270=E
-  if (deg < 45 || deg >= 315) return 'south'
-  if (deg < 135) return 'west'
-  if (deg < 225) return 'north'
-  return 'east'
-}
-
-function compass(dx, dz) {
-  const ns = dz > 0.5 ? 'south' : dz < -0.5 ? 'north' : ''
-  const ew = dx > 0.5 ? 'east' : dx < -0.5 ? 'west' : ''
-  return [ns, ew].filter(Boolean).join('-') || 'here'
-}
-
-// What's immediately around the bot, so it can reason about obstacles/steps/drops.
-function describeSurroundings(bot) {
-  const yaw = bot.entity.yaw
-  const fx = Math.round(-Math.sin(yaw))
-  const fz = Math.round(Math.cos(yaw))
-  const nameAt = (dx, dy, dz) => {
-    const b = bot.blockAt(bot.entity.position.offset(dx, dy, dz))
-    return b ? b.name : 'unknown'
-  }
-  const solid = (n) => n !== 'air' && n !== 'cave_air' && n !== 'water' && n !== 'unknown'
-  const frontFeet = nameAt(fx, 0, fz)
-  const frontHead = nameAt(fx, 1, fz)
-  return {
-    block_in_front: frontFeet,                        // at feet height, the way you face
-    block_in_front_head: frontHead,                   // at head height
-    can_step_up: solid(frontFeet) && !solid(frontHead),   // a 1-block step you can hop
-    blocked: solid(frontFeet) && solid(frontHead),        // 2-tall wall -> mine or go around
-    standing_on: nameAt(0, -1, 0),
-    above_head: nameAt(0, 2, 0),
-    drop_ahead: !solid(frontFeet) && nameAt(fx, -1, fz) === 'air'   // gap/cliff in front
-  }
-}
-
-// A coordinate "radar" of the nearest notable resource/hazard of each type.
-function nearestResources(bot) {
-  const mcData = require('minecraft-data')(bot.version)
-  const ids = RADAR_BLOCKS.map(n => mcData.blocksByName[n]?.id).filter(id => id !== undefined)
-  const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 64 })
-  const p = bot.entity.position
-  const best = {}
-  for (const pos of positions) {
-    const b = bot.blockAt(pos)
-    if (!b || best[b.name]) continue   // findBlocks is nearest-first: first hit per type is closest
-    best[b.name] = {
-      at: { x: pos.x, y: pos.y, z: pos.z },
-      dist: +p.distanceTo(pos).toFixed(1),
-      dir: compass(pos.x - p.x, pos.z - p.z)
+// Jump straight up and place a block under your feet at the apex (pillar up by 1).
+async function pillarUp(bot, item, name) {
+  try {
+    await bot.equip(item, 'hand')
+    const refBlock = bot.blockAt(bot.entity.position.offset(0, -1, 0))
+    if (!refBlock || refBlock.name === 'air') return `Nothing solid below to pillar up from.`
+    const baseY = Math.floor(bot.entity.position.y)
+    bot.setControlState('jump', true)
+    let placed = false
+    for (let i = 0; i < 16 && !placed; i++) {
+      await sleep(80)
+      if (bot.entity.position.y - baseY >= 1.0) {
+        try {
+          await bot.placeBlock(refBlock, { x: 0, y: 1, z: 0 })
+          placed = true
+        } catch (_) { /* not at a valid apex yet — keep bouncing and retry */ }
+      }
     }
-  }
-  return best
-}
-
-function getObservation(bot) {
-  const p = bot.entity.position
-  const inventory = {}
-  for (const item of bot.inventory.items()) {
-    inventory[item.name] = (inventory[item.name] || 0) + item.count
-  }
-  return {
-    position: { x: +p.x.toFixed(1), y: +p.y.toFixed(1), z: +p.z.toFixed(1) },
-    facing: cardinalFromYaw(bot.entity.yaw),
-    health: bot.health,
-    food: bot.food,
-    on_ground: bot.entity.onGround,
-    inventory,
-    surroundings: describeSurroundings(bot),
-    nearby: nearestResources(bot),
-    time_of_day: bot.time.timeOfDay
+    bot.setControlState('jump', false)
+    return placed
+      ? `Pillared up: placed ${name} beneath you.`
+      : `Could not place ${name} beneath you — try again or move to clearer ground.`
+  } catch (e) {
+    bot.setControlState('jump', false)
+    return `Failed to pillar up with ${name}: ${e.message}`
   }
 }
 
-module.exports = { TOOL_SCHEMAS, TOOL_IMPLS, getObservation }
+module.exports = { TOOL_SCHEMAS, TOOL_IMPLS, executeAction, STOP_SIGNAL }
