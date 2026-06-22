@@ -8,3 +8,4 @@ server/logs/
 server/cache/
 server/paper.jar
 *.DS_Store
+results/
