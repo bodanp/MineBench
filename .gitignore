@@ -9,3 +9,9 @@ server/cache/
 server/paper.jar
 *.DS_Store
 results/
+.vs/MineBench.slnx/FileContentIndex/45d8e9f7-5711-4adb-9f21-3ffeb01cd9d3.vsidx
+.vs/MineBench.slnx/v18/.wsuo
+.vs/MineBench.slnx/v18/DocumentLayout.json
+.vs/ProjectSettings.json
+.vs/slnx.sqlite
+.vs/VSWorkspaceState.json
