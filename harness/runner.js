@@ -95,7 +95,7 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     await waitForSpawn(bot)
     log(`Spawned. Applying setup for task "${task.id}"...`)
     await sleep(1000)                 // physics warm-up
-    await applyTaskSetup(bot, task, log)
+    const setup = await applyTaskSetup(bot, task, log)
     await sleep(500)
 
     const agent = createAgent({ model, goal: task.goal, toolSchemas: TOOL_SCHEMAS })
@@ -107,8 +107,23 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     // const posHistory = []
     // let stuckCooldown = 0
     let endReason = 'max_steps'
+    let errorDetail = null   // human-readable reason a run ended badly (llm_error/setup_failed)
 
-    for (let step = 0; step < maxSteps; step++) {
+    // Pre-flight: the world must be reset before the agent acts, or the run isn't valid and
+    // must NOT be scored. Two failure modes, both surfaced as setup_failed:
+    //   1. clear_inventory was requested but the inventory didn't empty (bot likely not OP).
+    //   2. the success condition is already satisfied (leftover items from a previous run).
+    if (setup && setup.cleared === false) {
+      log(`⚠ Setup could not reset the inventory — aborting as setup_failed. Make the bot OP: run "/op ${bot.username}" on the server, then retry.`)
+      endReason = 'setup_failed'
+      errorDetail = `Inventory did not clear — the bot is likely not OP. Run "/op ${bot.username}" on the server.`
+    } else if (checkSuccess({ inventory: readInventory(bot) }, task)) {
+      log('⚠ Success condition already met at step 0 — the world was not reset (leftover inventory). Aborting as setup_failed; this run does NOT count as a success.')
+      endReason = 'setup_failed'
+      errorDetail = 'Success condition already met before step 1 — the world was not reset (leftover inventory).'
+    }
+
+    for (let step = 0; endReason !== 'setup_failed' && step < maxSteps; step++) {
       if (!bot.entity) { endReason = 'disconnected'; break }
 
       const obs = buildObservation(bot)
@@ -130,6 +145,7 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
       } catch (e) {
         log('LLM call failed:', e.message)
         endReason = 'llm_error'
+        errorDetail = `LLM call failed: ${e.message}`
         break
       }
 
@@ -159,8 +175,9 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     }
 
     trace.ended_reason = endReason
+    trace.error = errorDetail
     trace.final_state = { inventory: readInventory(bot) }
-    emit({ type: 'run_end', ended_reason: endReason, duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
+    emit({ type: 'run_end', ended_reason: endReason, error: errorDetail, duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
   } catch (e) {
     log('Run error:', e.message)
     trace.ended_reason = trace.ended_reason || 'error'

@@ -15,6 +15,21 @@
   </header>
 
   <main class="wrap" id="app">
+    <section id="run-controls" class="run-controls hidden">
+      <div class="rc-row">
+        <label class="rc-field">Task
+          <select id="rc-task"></select>
+        </label>
+        <label class="rc-field">Model
+          <input id="rc-model" list="rc-model-list" autocomplete="off" placeholder="default" />
+          <datalist id="rc-model-list"></datalist>
+        </label>
+        <button id="rc-start" class="btn-start" type="button">▶ Start run</button>
+        <button id="rc-stop" class="btn-stop" type="button" disabled>■ Stop</button>
+      </div>
+      <div id="rc-msg" class="rc-msg"></div>
+    </section>
+
     <section id="live-section" class="live hidden">
       <div class="live-head">
         <span class="live-dot"></span>

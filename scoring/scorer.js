@@ -40,8 +40,11 @@ function score(trace, task) {
     if (a && b && JSON.stringify(a) === JSON.stringify(b)) repeats++
   }
 
+  // success is primary. Trust the harness's in-loop detection, or re-derive from final state —
+  // EXCEPT when the run was aborted because setup didn't reset the world (setup_failed): a
+  // leftover item must never be scored as a win.
   const success = trace.ended_reason === 'success' ||
-    checkSuccess(trace.final_state || { inventory: {} }, task)
+    (trace.ended_reason !== 'setup_failed' && checkSuccess(trace.final_state || { inventory: {} }, task))
 
   const maxSteps = task.max_steps || 60
   // Efficiency-weighted score: success is primary; fewer steps/errors/repeats scores higher.

@@ -38,14 +38,18 @@
 
   function statusText(run) {
     if (!run) return 'waiting for a run…';
+    if (run.status === 'launching') return 'launching… (bot connecting)';
     if (run.status === 'running') return 'running';
     if (run.status === 'ended') return 'finishing…';
+    if (run.status === 'stopped') return 'stopped';
+    if (run.status === 'error') return 'error';
     if (run.status === 'done') return run.scorecard && run.scorecard.success ? 'done · success' : 'done';
     return run.status || '';
   }
 
   function render(run) {
     section.classList.remove('hidden');
+    syncControls(run);
 
     const statusEl = $('#live-status');
     statusEl.textContent = statusText(run);
@@ -122,6 +126,9 @@
     } else if (run.ended_reason) {
       sc.appendChild(h('div', { class: 'muted', text: `Ended: ${run.ended_reason}` }));
     }
+    if (run.error) {
+      sc.appendChild(h('div', { class: 'run-error', text: run.error }));
+    }
     if (historyStale) {
       sc.appendChild(h('button', { class: 'refresh-btn', onclick: () => location.reload() }, '🔄 New result saved — refresh history'));
     }
@@ -146,7 +153,8 @@
         if (e.inventory) run.latest_inventory = e.inventory;
         break;
       case 'run_end':
-        if (run) { if (run.status === 'running') run.status = 'ended'; run.ended_reason = e.ended_reason; run.duration_s = e.duration_s; run.final_inventory = e.final_inventory; }
+        if (run) { if (run.status === 'running') run.status = 'ended'; run.ended_reason = e.ended_reason; run.error = e.error || null; run.duration_s = e.duration_s; run.final_inventory = e.final_inventory; }
+        if (e.error) setMsg(e.error, 'error');
         break;
       case 'run_scored':
         if (run) { run.status = 'done'; run.scorecard = e.scorecard; }
@@ -154,9 +162,101 @@
       case 'history_updated':
         historyStale = true;
         break;
+      case 'run_launching':
+        run = { status: 'launching', task_id: e.task_id, model: e.model, steps: [], latest_inventory: null };
+        setMsg('', '');
+        break;
+      case 'launch_error':
+        if (run) run.status = 'error';
+        setMsg((e.message || 'Launch failed') + (e.detail ? '\n' + e.detail : ''), 'error');
+        break;
+      case 'run_exit':
+        if (run && run.status !== 'done') run.status = (e.reason === 'stopped') ? 'stopped' : (run.status === 'error' ? 'error' : 'ended');
+        if (e.reason === 'stopped') setMsg('Run stopped.', 'info');
+        break;
       default: return;
     }
     render(run);
+  }
+
+  // ---- launch controls -------------------------------------------------------
+  let defaultModelName = '';
+
+  function setMsg(text, kind) {
+    const el = $('#rc-msg');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'rc-msg' + (kind ? ' ' + kind : '');
+  }
+
+  function syncControls(run) {
+    const startBtn = $('#rc-start'), stopBtn = $('#rc-stop');
+    if (!startBtn || !stopBtn) return;
+    const busy = !!run && (run.status === 'launching' || run.status === 'running' || run.status === 'ended');
+    startBtn.disabled = busy;
+    stopBtn.disabled = !busy;
+    $('#rc-task').disabled = busy;
+    $('#rc-model').disabled = busy;
+  }
+
+  async function initControls() {
+    const startBtn = $('#rc-start'), stopBtn = $('#rc-stop'), taskSel = $('#rc-task'), modelInput = $('#rc-model');
+    const controls = $('#run-controls');
+    if (!startBtn || !controls) return;
+
+    try {
+      const res = await fetch('/tasks');
+      const data = await res.json();
+      taskSel.innerHTML = '';
+      for (const t of (data.tasks || [])) {
+        const label = t.difficulty != null ? `${t.title} (d${t.difficulty})` : t.title;
+        taskSel.appendChild(h('option', { value: t.id, text: label }));
+      }
+      defaultModelName = data.default_model || '';
+      if (defaultModelName) modelInput.placeholder = `default (${defaultModelName})`;
+      const dl = $('#rc-model-list');
+      if (dl) {
+        const seen = new Set();
+        for (const m of [defaultModelName, ...(data.models || [])]) {
+          if (m && !seen.has(m)) { seen.add(m); dl.appendChild(h('option', { value: m })); }
+        }
+      }
+      controls.classList.remove('hidden');
+    } catch (_) {
+      // No server/tasks endpoint — leave controls hidden (e.g. opened as a static file).
+      return;
+    }
+
+    startBtn.addEventListener('click', async () => {
+      const task = taskSel.value;
+      if (!task) { setMsg('Pick a task first.', 'error'); return; }
+      startBtn.disabled = true;
+      setMsg('Launching…', 'info');
+      try {
+        const res = await fetch('/run', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ task, model: modelInput.value.trim() })
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) { setMsg(out.error || `Launch failed (${res.status}).`, 'error'); startBtn.disabled = false; }
+        else setMsg('Started ' + task + '.', 'ok');
+      } catch (e) {
+        setMsg('Could not reach server: ' + e.message, 'error');
+        startBtn.disabled = false;
+      }
+    });
+
+    stopBtn.addEventListener('click', async () => {
+      stopBtn.disabled = true;
+      setMsg('Stopping…', 'info');
+      try {
+        const res = await fetch('/stop', { method: 'POST' });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) setMsg(out.error || 'Stop failed.', 'error');
+      } catch (e) {
+        setMsg('Could not reach server: ' + e.message, 'error');
+      }
+    });
   }
 
   function connect() {
@@ -167,5 +267,6 @@
 
   // Show the panel immediately (waiting state) so it's obvious the live view is active.
   render(run);
+  initControls();
   connect();
 })();
