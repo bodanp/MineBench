@@ -148,11 +148,22 @@ const server = http.createServer((req, res) => {
   serveStatic(req, res)
 })
 
+function openBrowser(url) {
+  try {
+    const { spawn } = require('child_process')
+    if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref()
+    else if (process.platform === 'darwin') spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
+    else spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref()
+  } catch (_) {}
+}
+
 regenerateHistory()   // make sure history is fresh on startup
 server.listen(PORT, () => {
-  console.log(`\n  MineBench LIVE dashboard  →  http://localhost:${PORT}`)
-  console.log(`  Leave this open, then in another terminal run a benchmark:`)
+  const url = `http://localhost:${PORT}`
+  console.log(`\n  MineBench dashboard  →  ${url}`)
+  console.log(`  Leave this running, then in another terminal start a benchmark to watch it live:`)
   console.log(`    npm run bench -- --task gather_wood --model <model>\n`)
+  if (process.env.MINEBENCH_NO_OPEN !== '1' && !process.argv.includes('--no-open')) openBrowser(url)
 })
 
 module.exports = { server, handleEvent }
