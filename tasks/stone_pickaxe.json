@@ -9,7 +9,6 @@
     "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
     "time": "day",
     "weather": "clear",
-    "teleport": "spawn",
     "give": [],
     "clear_inventory": true
   },

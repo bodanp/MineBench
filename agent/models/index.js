@@ -9,8 +9,13 @@
 //     has GPT41_MINI_* / NANO_* blocks) so different deployments/resources can be compared.
 // ─────────────────────────────────────────────
 const { createAzureModel } = require('./azure')
+const { createCopilotModel } = require('./copilot')
 
 function resolveModel(modelName) {
+  if (modelName && modelName.startsWith('copilot/')) {
+    return createCopilotModel({ model: modelName.slice('copilot/'.length) })
+  }
+
   const deployment = modelName || process.env.AZURE_OPENAI_DEPLOYMENT
   return createAzureModel({
     endpoint: process.env.AZURE_OPENAI_ENDPOINT,
@@ -21,4 +26,4 @@ function resolveModel(modelName) {
   })
 }
 
-module.exports = { resolveModel, createAzureModel }
+module.exports = { resolveModel, createAzureModel, createCopilotModel }
