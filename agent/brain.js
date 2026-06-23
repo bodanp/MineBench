@@ -75,7 +75,21 @@ function createAgent({ model, goal, toolSchemas }) {
       // close out the rest (otherwise the next request 400s on the unanswered ids).
       pendingToolCalls = (msg.tool_calls || []).slice()
 
-      const thought = msg.content || ''
+      // Some models (notably Claude) occasionally narrate a turn as plain prose without
+      // calling a tool, intending to act next. Don't end the episode on that — nudge once
+      // for an explicit action. stop() is itself a tool, so completion still flows through it.
+      let lastMsg = msg
+      if (!pendingToolCalls.length) {
+        messages.push({
+          role: 'user',
+          content: 'You did not call a tool. Respond with exactly ONE tool call. Call stop() only if the goal is fully complete.'
+        })
+        lastMsg = await model.complete({ messages, tools: toolSchemas })
+        messages.push(lastMsg)
+        pendingToolCalls = (lastMsg.tool_calls || []).slice()
+      }
+
+      const thought = lastMsg.content || ''
       const call = pendingToolCalls[0]
       if (!call) return { thought, done: true, reason: 'no_tool_call' }
 
