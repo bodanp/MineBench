@@ -17,6 +17,7 @@ MINING RULES — you must EQUIP the right pickaxe or the block breaks but drops 
 - Need an IRON pickaxe or better: gold_ore, redstone_ore, diamond_ore, emerald_ore.
 - Need a DIAMOND pickaxe or better: obsidian, ancient_debris.
 Rule of thumb: ALWAYS equip a pickaxe before mining stone or any ore. Mining with too low a tier wastes the block.
+ORDER MATTERS: do NOT mine_block stone/ore until you actually HAVE a wooden_pickaxe (or better) in your inventory — without it the block breaks and drops NOTHING. Sequence: logs -> planks -> sticks -> crafting_table -> wooden_pickaxe, and ONLY THEN mine stone to collect cobblestone.
 
 FASTEST TOOL (speed only): pickaxe -> stone/ore, axe -> wood/logs, shovel -> dirt/sand/gravel, hoe -> leaves/crops.
 
@@ -26,9 +27,10 @@ WHAT BLOCKS DROP:
 - oak_log -> oak_log item. grass_block/dirt -> dirt.
 
 CRAFTING TECH TREE (recipes):
-- 1 log -> 4 planks (no table needed).
-- 2 planks -> 4 sticks (no table needed).
+- 1 log -> 4 planks of the SAME wood, no table needed (e.g. acacia_log -> acacia_planks, birch_log -> birch_planks). Use the EXACT log name in your inventory — do NOT assume oak.
+- 2 planks -> 4 sticks (no table needed). Planks of ANY wood work for sticks, tools, and tables.
 - 4 planks -> 1 crafting_table (no table needed).
+- BUDGET your planks: a crafting_table needs 4 planks, a wooden_pickaxe needs 3 planks + 2 sticks, and 4 sticks cost only 2 planks. Do NOT turn all your planks into sticks — keep enough planks for BOTH the table and the pickaxe (mine ~2-3 logs to be safe).
 - These need a crafting_table placed within reach (~3-4 blocks):
   - wooden_pickaxe = 3 planks + 2 sticks
   - stone_pickaxe  = 3 cobblestone + 2 sticks
