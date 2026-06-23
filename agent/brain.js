@@ -22,7 +22,7 @@ Your goal: ${goal}
 
 Available tools:
 - read_data(item): look up the raw game data for an item/block — returns ALL its crafting recipes (ingredient names + amounts, and whether each needs a crafting_table) and, for blocks, what they drop and which tools yield a drop. It gives you FACTS, not steps; you decide what to do with them.
-- look_around(): scan nearby blocks and entities
+- look_around(): actively scan a wider area (~8 blocks in every direction) for blocks and entities you cannot see in your current observation. This is your "search" move — call it deliberately whenever you are stuck, lost, or hunting for a block/ore that is not already in "nearby".
 - move_to(x, y, z): pathfind to a coordinate (handles most obstacles automatically)
 - move_forward(seconds): walk forward while auto-jumping; use to hop a 1-block step or get unstuck
 - mine_block(block_type): walk to and mine the nearest matching block (e.g. "oak_log", "stone")
@@ -48,6 +48,7 @@ Rules:
 - Respect crafting dependencies: logs -> planks -> sticks; place a crafting_table to make a wooden_pickaxe; mine cobblestone with a pickaxe to make a stone_pickaxe.
 - If a tool call returns an error, read it and try a different approach instead of repeating the same call.
 - If "surroundings.blocked" is true (a 2-tall wall) or your position barely changes between steps, mine_block the block in front or move_to around it. If "surroundings.can_step_up" is true, use move_forward to hop it. Do not keep repeating the same failing move_to.
+- When you are STUCK, lost, or cannot find what you need — the resource you want is NOT in "nearby", a move keeps failing, or you simply don't know where to go — consciously call look_around() to scan the wider area BEFORE wandering or digging blindly. Treat look_around() as your first response to being stuck or to needing an ore/block that is out of your direct sight, then act on whatever it surfaces.
 - Entities and players are NOT resources or destinations. Never navigate toward a player or your own past position — only travel to block coordinates (from "nearby") or to genuinely new, unexplored areas.
 - Never call the same tool with the same arguments twice in a row. If an action did not change your position or inventory, it FAILED — switch strategy (mine the blocking block, or explore a different direction) rather than repeating it.
 - Do not claim success early. Call stop() only when the goal item/condition is actually present in your inventory or state.
