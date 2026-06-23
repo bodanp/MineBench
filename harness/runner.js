@@ -64,7 +64,7 @@ function waitForSpawn(bot, timeoutMs = 30000) {
   })
 }
 
-async function run({ task, model, log = console.log }) {
+async function run({ task, model, log = console.log, verbose = false }) {
   const startedMs = Date.now()
   const trace = {
     task_id: task.id,
@@ -133,6 +133,7 @@ async function run({ task, model, log = console.log }) {
 
       if (decision.done) {
         trace.steps.push({ i: step + 1, observation: obs, thought: decision.thought, action: null, result: decision.reason || 'no action', ok: false, pos })
+        if (verbose && decision.thought) log(`   thought: ${decision.thought}`)
         endReason = decision.reason === 'no_tool_call' ? 'no_tool_call' : 'agent_stop'
         break
       }
@@ -143,6 +144,7 @@ async function run({ task, model, log = console.log }) {
         i: step + 1, observation: obs, thought: decision.thought,
         action: { tool: decision.tool, args: decision.args }, result, ok, pos
       })
+      if (verbose && decision.thought) log(`   thought: ${decision.thought}`)
       log(`step ${step + 1}: ${decision.tool}(${JSON.stringify(decision.args)}) -> ${result}`)
 
       // Harness-owned success detection (don't trust the model's stop()).
