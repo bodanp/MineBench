@@ -14,14 +14,11 @@
 // Contract: one action per step (we take the first tool_call). The harness executes it
 // and feeds the result back via recordResult before the next act().
 // ─────────────────────────────────────────────
-const { MINECRAFT_KNOWLEDGE } = require('./knowledge')
 
 function buildSystemPrompt(goal) {
   return `You are an AI agent playing Minecraft, controlled entirely through tool calls.
 
 Your goal: ${goal}
-
-${MINECRAFT_KNOWLEDGE}
 
 Available tools:
 - read_data(item): look up the raw game data for an item/block — returns ALL its crafting recipes (ingredient names + amounts, and whether each needs a crafting_table) and, for blocks, what they drop and which tools yield a drop. It gives you FACTS, not steps; you decide what to do with them.
