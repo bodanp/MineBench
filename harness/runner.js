@@ -64,8 +64,11 @@ function waitForSpawn(bot, timeoutMs = 30000) {
   })
 }
 
-async function run({ task, model, log = console.log, verbose = false }) {
+async function run({ task, model, log = console.log, verbose = false, onEvent }) {
   const startedMs = Date.now()
+  // Optional live event sink (used by the live dashboard). No-op when not provided, so the
+  // runner never depends on the dashboard being present.
+  const emit = typeof onEvent === 'function' ? onEvent : () => {}
   const trace = {
     task_id: task.id,
     model: model.name,
@@ -99,6 +102,7 @@ async function run({ task, model, log = console.log, verbose = false }) {
     agent.start()
 
     const maxSteps = task.max_steps || 60
+    emit({ type: 'run_start', task_id: task.id, title: task.title || task.id, model: model.name, goal: task.goal, max_steps: maxSteps, started_at: trace.started_at })
     // UNSTUCK ASSISTANCE DISABLED — position history / cooldown for oscillation detection.
     // const posHistory = []
     // let stuckCooldown = 0
@@ -133,6 +137,7 @@ async function run({ task, model, log = console.log, verbose = false }) {
 
       if (decision.done) {
         trace.steps.push({ i: step + 1, observation: obs, thought: decision.thought, action: null, result: decision.reason || 'no action', ok: false, pos })
+        emit({ type: 'step', i: step + 1, max_steps: maxSteps, thought: decision.thought, action: null, result: decision.reason || 'no action', ok: false, pos, inventory: readInventory(bot) })
         if (verbose && decision.thought) log(`   thought: ${decision.thought}`)
         endReason = decision.reason === 'no_tool_call' ? 'no_tool_call' : 'agent_stop'
         break
@@ -146,6 +151,7 @@ async function run({ task, model, log = console.log, verbose = false }) {
       })
       if (verbose && decision.thought) log(`   thought: ${decision.thought}`)
       log(`step ${step + 1}: ${decision.tool}(${JSON.stringify(decision.args)}) -> ${result}`)
+      emit({ type: 'step', i: step + 1, max_steps: maxSteps, thought: decision.thought, action: { tool: decision.tool, args: decision.args }, result, ok, pos, inventory: readInventory(bot) })
 
       // Harness-owned success detection (don't trust the model's stop()).
       if (checkSuccess({ inventory: readInventory(bot) }, task)) { endReason = 'success'; break }
@@ -154,6 +160,7 @@ async function run({ task, model, log = console.log, verbose = false }) {
 
     trace.ended_reason = endReason
     trace.final_state = { inventory: readInventory(bot) }
+    emit({ type: 'run_end', ended_reason: endReason, duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
   } catch (e) {
     log('Run error:', e.message)
     trace.ended_reason = trace.ended_reason || 'error'
