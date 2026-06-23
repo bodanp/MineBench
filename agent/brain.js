@@ -24,6 +24,7 @@ Your goal: ${goal}
 ${MINECRAFT_KNOWLEDGE}
 
 Available tools:
+- read_data(item): look up the raw game data for an item/block — returns ALL its crafting recipes (ingredient names + amounts, and whether each needs a crafting_table) and, for blocks, what they drop and which tools yield a drop. It gives you FACTS, not steps; you decide what to do with them.
 - look_around(): scan nearby blocks and entities
 - move_to(x, y, z): pathfind to a coordinate (handles most obstacles automatically)
 - move_forward(seconds): walk forward while auto-jumping; use to hop a 1-block step or get unstuck
@@ -41,6 +42,9 @@ Each observation is your senses — READ it before acting:
 - "inventory": what you have — track progress and prerequisites here.
 
 Rules:
+- When you are unsure of a recipe or what a block needs/drops, call read_data(item) to get the facts, then reason it out YOURSELF: look at the recipes, pick one whose ingredients you can actually obtain, and work backwards (what does the goal need -> what do those need -> ... -> something you can mine by hand). Decide only the SINGLE next action each step.
+- Only tool calls change the world. Your thoughts and chat() do NOT mine, craft, move, or pick anything up — narrating "I am mining the tree" does nothing unless you actually call mine_block. Never say or assume an action happened that you did not call.
+- After every action, read the tool result and your new "inventory": if the item/effect you expected is not there, the action FAILED — do not pretend it worked or move on. Diagnose and try a different approach.
 - Take ONE action at a time, then read the new observation before choosing the next.
 - If "nearby" lists what you need with "exposed": true, go to its "at" coordinates. If that entry is "exposed": false (buried) or NOT listed, do not path straight to it — explore or dig toward it (move_to an open point ~15 blocks away, or dig down) and re-check "nearby" until an exposed one appears.
 - Respect crafting dependencies: logs -> planks -> sticks; place a crafting_table to make a wooden_pickaxe; mine cobblestone with a pickaxe to make a stone_pickaxe.

@@ -29,7 +29,9 @@ const { checkSuccess } = require('../scoring/scorer')
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
-const STUCK_NUDGE = `\n\n⚠️ STUCK: over the last 8 steps you barely moved — you are looping, not progressing. STOP repeating your last action. Do something DIFFERENT now: if "surroundings.block_in_front" is not air, mine_block it to clear the way; otherwise move_to a point at least 20 blocks away in a new direction, or look_around. Do NOT reuse a coordinate you already tried.`
+// UNSTUCK ASSISTANCE DISABLED — the oscillation "stuck" nudge that told the agent to
+// change strategy when it stopped making progress has been commented out.
+// const STUCK_NUDGE = `\n\n⚠️ STUCK: over the last 8 steps you barely moved — you are looping, not progressing. STOP repeating your last action. Do something DIFFERENT now: if "surroundings.block_in_front" is not air, mine_block it to clear the way; otherwise move_to a point at least 20 blocks away in a new direction, or look_around. Do NOT reuse a coordinate you already tried.`
 
 function createBot() {
   const bot = mineflayer.createBot({
@@ -70,7 +72,7 @@ async function run({ task, model, log = console.log }) {
     started_at: new Date().toISOString(),
     ended_reason: null,
     duration_s: null,
-    stuck_events: 0,
+    // stuck_events: 0,   // UNSTUCK ASSISTANCE DISABLED — no longer tracked
     final_state: { inventory: {} },
     steps: []
   }
@@ -97,8 +99,9 @@ async function run({ task, model, log = console.log }) {
     agent.start()
 
     const maxSteps = task.max_steps || 60
-    const posHistory = []
-    let stuckCooldown = 0
+    // UNSTUCK ASSISTANCE DISABLED — position history / cooldown for oscillation detection.
+    // const posHistory = []
+    // let stuckCooldown = 0
     let endReason = 'max_steps'
 
     for (let step = 0; step < maxSteps; step++) {
@@ -106,15 +109,16 @@ async function run({ task, model, log = console.log }) {
 
       const obs = buildObservation(bot)
 
-      // Oscillation detection: tiny net displacement over 8 steps => force a strategy change.
+      // UNSTUCK ASSISTANCE DISABLED — oscillation detection that injected STUCK_NUDGE
+      // when the bot barely moved over the last 8 steps. The agent now receives no nudge.
       let nudge = ''
-      if (stuckCooldown > 0) stuckCooldown--
-      posHistory.push(bot.entity.position.clone())
-      if (posHistory.length > 8) posHistory.shift()
-      if (posHistory.length === 8 && stuckCooldown === 0) {
-        const net = posHistory[0].distanceTo(posHistory[posHistory.length - 1])
-        if (net < 4) { trace.stuck_events++; stuckCooldown = 4; nudge = STUCK_NUDGE; log('Oscillation detected — nudging agent.') }
-      }
+      // if (stuckCooldown > 0) stuckCooldown--
+      // posHistory.push(bot.entity.position.clone())
+      // if (posHistory.length > 8) posHistory.shift()
+      // if (posHistory.length === 8 && stuckCooldown === 0) {
+      //   const net = posHistory[0].distanceTo(posHistory[posHistory.length - 1])
+      //   if (net < 4) { trace.stuck_events++; stuckCooldown = 4; nudge = STUCK_NUDGE; log('Oscillation detected — nudging agent.') }
+      // }
 
       let decision
       try {

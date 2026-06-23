@@ -1,0 +1,17 @@
+{
+  "id": "iron_pickaxe",
+  "title": "Make an iron pickaxe from scratch",
+  "goal": "Make an iron_pickaxe from scratch.",
+  "difficulty": 5,
+  "max_steps": 120,
+  "rationale": "Very long-horizon: gather wood, craft planks/sticks/table, wooden then stone pickaxe, mine iron ore, build a furnace, smelt iron ingots, and craft an iron pickaxe. Tests deep tool-tier reasoning, smelting, and multi-stage crafting dependencies.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": [0, 64, 0],
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": { "inventory": { "iron_pickaxe": 1 } }
+}

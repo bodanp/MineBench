@@ -1,0 +1,1379 @@
+{
+  "scorecard": {
+    "task_id": "stone_pickaxe",
+    "model": "gpt-4.1-mini",
+    "success": true,
+    "steps": 18,
+    "duration_s": 121.1,
+    "tool_calls": 18,
+    "tool_errors": 2,
+    "repeated_actions": 4,
+    "stuck_events": 0,
+    "ended_reason": "success",
+    "score": 0.85
+  },
+  "trace": {
+    "task_id": "stone_pickaxe",
+    "model": "gpt-4.1-mini",
+    "started_at": "2026-06-23T01:47:35.061Z",
+    "ended_reason": "success",
+    "duration_s": 121.1,
+    "final_state": {
+      "inventory": {
+        "stick": 30,
+        "stone_pickaxe": 1,
+        "wooden_pickaxe": 1,
+        "dirt": 10,
+        "leaf_litter": 15,
+        "crafting_table": 1,
+        "birch_planks": 1,
+        "oak_planks": 8
+      }
+    },
+    "steps": [
+      {
+        "i": 1,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "north",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "birch_planks": 4,
+            "dirt": 7,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "grass_block",
+            "above_head": "oak_leaves",
+            "drop_ahead": true
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": -1,
+                "y": 64,
+                "z": 90
+              },
+              "dist": 1.2,
+              "dir": "north"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.3,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 1234
+        },
+        "thought": "",
+        "action": {
+          "tool": "mine_block",
+          "args": {
+            "block_type": "oak_log"
+          }
+        },
+        "result": "Mined oak_log at (-1.0, 64.0, 90.0)",
+        "ok": true,
+        "pos": [
+          -1.3,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 2,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "east",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "birch_planks": 4,
+            "dirt": 7,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "oak_log",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "grass_block",
+            "above_head": "oak_leaves",
+            "drop_ahead": true
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": -1,
+                "y": 66,
+                "z": 90
+              },
+              "dist": 1.2,
+              "dir": "north"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.3,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 1354
+        },
+        "thought": "",
+        "action": {
+          "tool": "mine_block",
+          "args": {
+            "block_type": "oak_log"
+          }
+        },
+        "result": "Mined oak_log at (-1.0, 66.0, 90.0)",
+        "ok": true,
+        "pos": [
+          -1.3,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 3,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "east",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "birch_planks": 4,
+            "dirt": 7,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "grass_block",
+            "above_head": "oak_leaves",
+            "drop_ahead": true
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": -1,
+                "y": 67,
+                "z": 90
+              },
+              "dist": 2.1,
+              "dir": "north"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.3,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 1434
+        },
+        "thought": "",
+        "action": {
+          "tool": "mine_block",
+          "args": {
+            "block_type": "oak_log"
+          }
+        },
+        "result": "Mined oak_log at (-1.0, 67.0, 90.0)",
+        "ok": true,
+        "pos": [
+          -1.3,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 4,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "east",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "birch_planks": 4,
+            "dirt": 7,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "grass_block",
+            "above_head": "oak_leaves",
+            "drop_ahead": true
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": -1,
+                "y": 68,
+                "z": 90
+              },
+              "dist": 3.1,
+              "dir": "north"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.3,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 1514
+        },
+        "thought": "",
+        "action": {
+          "tool": "mine_block",
+          "args": {
+            "block_type": "oak_log"
+          }
+        },
+        "result": "Mined oak_log at (-1.0, 68.0, 90.0)",
+        "ok": true,
+        "pos": [
+          -1.3,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 5,
+        "observation": {
+          "position": {
+            "x": -0.5,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "south",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "birch_planks": 4,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2,
+            "oak_log": 1
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "dirt",
+            "above_head": "air",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": 5,
+                "y": 65,
+                "z": 90
+              },
+              "dist": 5.5,
+              "dir": "north-east"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.5,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2074
+        },
+        "thought": "",
+        "action": {
+          "tool": "read_data",
+          "args": {
+            "target": "oak_planks"
+          }
+        },
+        "result": "{\"name\":\"oak_planks\",\"displayName\":\"Oak Planks\",\"craftable\":true,\"recipes\":[{\"ingredients\":{\"oak_log\":1},\"makes\":4,\"needs_crafting_table\":false}],\"mining\":{\"drops\":[\"oak_planks\"],\"hardness\":2,\"tools_that_get_a_drop\":\"any (hand works)\"}}",
+        "ok": true,
+        "pos": [
+          -0.5,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 6,
+        "observation": {
+          "position": {
+            "x": -0.5,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "south",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "birch_planks": 4,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2,
+            "oak_log": 2
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "dirt",
+            "above_head": "air",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": 5,
+                "y": 65,
+                "z": 90
+              },
+              "dist": 5.5,
+              "dir": "north-east"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.5,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2094
+        },
+        "thought": "",
+        "action": {
+          "tool": "craft",
+          "args": {
+            "item": "oak_planks",
+            "count": 8
+          }
+        },
+        "result": "Failed to craft oak_planks: Error: missing ingredient",
+        "ok": false,
+        "pos": [
+          -0.5,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 7,
+        "observation": {
+          "position": {
+            "x": -0.5,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "south",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "oak_planks": 8,
+            "birch_planks": 4,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "dirt",
+            "above_head": "air",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": 5,
+                "y": 65,
+                "z": 90
+              },
+              "dist": 5.5,
+              "dir": "north-east"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.5,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2134
+        },
+        "thought": "",
+        "action": {
+          "tool": "read_data",
+          "args": {
+            "target": "stick"
+          }
+        },
+        "result": "{\"name\":\"stick\",\"displayName\":\"Stick\",\"craftable\":true,\"recipes\":[{\"ingredients\":{\"cherry_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"bamboo_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"mangrove_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"warped_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"crimson_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"pale_oak_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"dark_oak_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"acacia_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"jungle_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"birch_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"spruce_planks\":2},\"makes\":4,\"needs_crafting_table\":false},{\"ingredients\":{\"oak_planks\":2},\"makes\":4,\"needs_crafting_table\":false}]}",
+        "ok": true,
+        "pos": [
+          -0.5,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 8,
+        "observation": {
+          "position": {
+            "x": -0.5,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "south",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "oak_planks": 8,
+            "birch_planks": 4,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "dirt",
+            "above_head": "air",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": 5,
+                "y": 65,
+                "z": 90
+              },
+              "dist": 5.5,
+              "dir": "north-east"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.5,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2154
+        },
+        "thought": "",
+        "action": {
+          "tool": "read_data",
+          "args": {
+            "target": "wooden_pickaxe"
+          }
+        },
+        "result": "{\"name\":\"wooden_pickaxe\",\"displayName\":\"Wooden Pickaxe\",\"craftable\":true,\"recipes\":[{\"ingredients\":{\"cherry_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"bamboo_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"mangrove_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"warped_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"crimson_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"pale_oak_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"dark_oak_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"acacia_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"jungle_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"birch_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"spruce_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"oak_planks\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true}]}",
+        "ok": true,
+        "pos": [
+          -0.5,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 9,
+        "observation": {
+          "position": {
+            "x": -0.5,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "south",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "oak_planks": 8,
+            "birch_planks": 4,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "dirt",
+            "above_head": "air",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": 5,
+                "y": 65,
+                "z": 90
+              },
+              "dist": 5.5,
+              "dir": "north-east"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.5,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2174
+        },
+        "thought": "",
+        "action": {
+          "tool": "move_to",
+          "args": {
+            "x": -2,
+            "y": 65,
+            "z": 89
+          }
+        },
+        "result": "Reached (-1.3, 65.0, 90.5)",
+        "ok": true,
+        "pos": [
+          -0.5,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 10,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "west",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "oak_planks": 8,
+            "birch_planks": 4,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "leaf_litter",
+            "block_in_front_head": "air",
+            "can_step_up": true,
+            "blocked": false,
+            "standing_on": "grass_block",
+            "above_head": "oak_leaves",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "oak_log": {
+              "at": {
+                "x": -7,
+                "y": 65,
+                "z": 89
+              },
+              "dist": 5.9,
+              "dir": "north-west"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.3,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2214
+        },
+        "thought": "",
+        "action": {
+          "tool": "place_block",
+          "args": {
+            "block_type": "crafting_table",
+            "dx": 1,
+            "dy": 0,
+            "dz": 0
+          }
+        },
+        "result": "Placed crafting_table at offset (1,0,0)",
+        "ok": true,
+        "pos": [
+          -1.3,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 11,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "east",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "oak_planks": 8,
+            "birch_planks": 4,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "stick": 34,
+            "crafting_table": 2
+          },
+          "surroundings": {
+            "block_in_front": "crafting_table",
+            "block_in_front_head": "air",
+            "can_step_up": true,
+            "blocked": false,
+            "standing_on": "grass_block",
+            "above_head": "oak_leaves",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "crafting_table": {
+              "at": {
+                "x": -1,
+                "y": 65,
+                "z": 90
+              },
+              "dist": 0.6,
+              "dir": "north"
+            },
+            "oak_log": {
+              "at": {
+                "x": -7,
+                "y": 65,
+                "z": 89
+              },
+              "dist": 5.9,
+              "dir": "north-west"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.3,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2254
+        },
+        "thought": "",
+        "action": {
+          "tool": "craft",
+          "args": {
+            "item": "wooden_pickaxe"
+          }
+        },
+        "result": "Crafted 1x wooden_pickaxe",
+        "ok": true,
+        "pos": [
+          -1.3,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 12,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "east",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "stick": 66,
+            "oak_planks": 8,
+            "wooden_pickaxe": 1,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "crafting_table": 1
+          },
+          "surroundings": {
+            "block_in_front": "crafting_table",
+            "block_in_front_head": "air",
+            "can_step_up": true,
+            "blocked": false,
+            "standing_on": "grass_block",
+            "above_head": "oak_leaves",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "crafting_table": {
+              "at": {
+                "x": -1,
+                "y": 65,
+                "z": 90
+              },
+              "dist": 0.6,
+              "dir": "north"
+            },
+            "oak_log": {
+              "at": {
+                "x": -7,
+                "y": 65,
+                "z": 89
+              },
+              "dist": 5.9,
+              "dir": "north-west"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.3,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2274
+        },
+        "thought": "",
+        "action": {
+          "tool": "equip",
+          "args": {
+            "item": "wooden_pickaxe"
+          }
+        },
+        "result": "Equipped wooden_pickaxe.",
+        "ok": true,
+        "pos": [
+          -1.3,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 13,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 65,
+            "z": 90.5
+          },
+          "facing": "east",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "stick": 66,
+            "oak_planks": 8,
+            "wooden_pickaxe": 1,
+            "dirt": 6,
+            "leaf_litter": 12,
+            "crafting_table": 1
+          },
+          "surroundings": {
+            "block_in_front": "crafting_table",
+            "block_in_front_head": "air",
+            "can_step_up": true,
+            "blocked": false,
+            "standing_on": "grass_block",
+            "above_head": "oak_leaves",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "crafting_table": {
+              "at": {
+                "x": -1,
+                "y": 65,
+                "z": 90
+              },
+              "dist": 0.6,
+              "dir": "north"
+            },
+            "oak_log": {
+              "at": {
+                "x": -7,
+                "y": 65,
+                "z": 89
+              },
+              "dist": 5.9,
+              "dir": "north-west"
+            },
+            "birch_log": {
+              "at": {
+                "x": -3,
+                "y": 68,
+                "z": 83
+              },
+              "dist": 8.3,
+              "dir": "north-west"
+            },
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 8.4,
+              "dir": "north"
+            }
+          },
+          "time_of_day": 2314
+        },
+        "thought": "",
+        "action": {
+          "tool": "mine_block",
+          "args": {
+            "block_type": "stone"
+          }
+        },
+        "result": "Mined stone at (-2.0, 62.0, 90.0)",
+        "ok": true,
+        "pos": [
+          -1.3,
+          65,
+          90.5
+        ]
+      },
+      {
+        "i": 14,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 63,
+            "z": 90.5
+          },
+          "facing": "west",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "wooden_pickaxe": 1,
+            "dirt": 8,
+            "leaf_litter": 14,
+            "stick": 64,
+            "crafting_table": 1,
+            "birch_planks": 1,
+            "oak_planks": 8
+          },
+          "surroundings": {
+            "block_in_front": "dirt",
+            "block_in_front_head": "grass_block",
+            "can_step_up": false,
+            "blocked": true,
+            "standing_on": "air",
+            "above_head": "air",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 6.5,
+              "dir": "north"
+            },
+            "coal_ore": {
+              "at": {
+                "x": -14,
+                "y": 55,
+                "z": 90
+              },
+              "dist": 15,
+              "dir": "north-west"
+            }
+          },
+          "time_of_day": 3134
+        },
+        "thought": "",
+        "action": {
+          "tool": "mine_block",
+          "args": {
+            "block_type": "stone"
+          }
+        },
+        "result": "Mined stone at (-3.0, 62.0, 90.0)",
+        "ok": true,
+        "pos": [
+          -1.3,
+          62,
+          90.5
+        ]
+      },
+      {
+        "i": 15,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 63,
+            "z": 90.5
+          },
+          "facing": "west",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "wooden_pickaxe": 1,
+            "dirt": 7,
+            "leaf_litter": 15,
+            "stick": 64,
+            "crafting_table": 1,
+            "birch_planks": 1,
+            "oak_planks": 8
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "dirt",
+            "above_head": "air",
+            "drop_ahead": true
+          },
+          "nearby": {
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 6.5,
+              "dir": "north"
+            },
+            "coal_ore": {
+              "at": {
+                "x": -14,
+                "y": 55,
+                "z": 90
+              },
+              "dist": 15,
+              "dir": "north-west"
+            }
+          },
+          "time_of_day": 3234
+        },
+        "thought": "",
+        "action": {
+          "tool": "read_data",
+          "args": {
+            "target": "cobblestone"
+          }
+        },
+        "result": "{\"name\":\"cobblestone\",\"displayName\":\"Cobblestone\",\"craftable\":false,\"mining\":{\"drops\":[\"cobblestone\"],\"hardness\":2,\"tools_that_get_a_drop\":[\"wooden_pickaxe\",\"copper_pickaxe\",\"stone_pickaxe\",\"golden_pickaxe\",\"iron_pickaxe\",\"diamond_pickaxe\",\"netherite_pickaxe\"]}}",
+        "ok": true,
+        "pos": [
+          -1.3,
+          63,
+          90.5
+        ]
+      },
+      {
+        "i": 16,
+        "observation": {
+          "position": {
+            "x": -1.3,
+            "y": 63,
+            "z": 90.5
+          },
+          "facing": "west",
+          "health": 20,
+          "food": 14,
+          "on_ground": true,
+          "inventory": {
+            "wooden_pickaxe": 1,
+            "dirt": 7,
+            "leaf_litter": 15,
+            "stick": 64,
+            "crafting_table": 1,
+            "birch_planks": 1,
+            "oak_planks": 8
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "dirt",
+            "above_head": "air",
+            "drop_ahead": true
+          },
+          "nearby": {
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 6.5,
+              "dir": "north"
+            },
+            "coal_ore": {
+              "at": {
+                "x": -14,
+                "y": 55,
+                "z": 90
+              },
+              "dist": 15,
+              "dir": "north-west"
+            }
+          },
+          "time_of_day": 3254
+        },
+        "thought": "",
+        "action": {
+          "tool": "move_to",
+          "args": {
+            "x": -1,
+            "y": 57,
+            "z": 88
+          }
+        },
+        "result": "Failed to reach (-1,57,88): stuck",
+        "ok": false,
+        "pos": [
+          -1.3,
+          63,
+          90.5
+        ]
+      },
+      {
+        "i": 17,
+        "observation": {
+          "position": {
+            "x": -1.6,
+            "y": 61,
+            "z": 90.5
+          },
+          "facing": "east",
+          "health": 20,
+          "food": 13,
+          "on_ground": true,
+          "inventory": {
+            "wooden_pickaxe": 1,
+            "dirt": 10,
+            "leaf_litter": 15,
+            "stick": 64,
+            "crafting_table": 1,
+            "birch_planks": 1,
+            "oak_planks": 8,
+            "cobblestone": 3
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "stone",
+            "above_head": "air",
+            "drop_ahead": false
+          },
+          "nearby": {
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 4.7,
+              "dir": "north-east"
+            },
+            "coal_ore": {
+              "at": {
+                "x": -14,
+                "y": 55,
+                "z": 90
+              },
+              "dist": 13.8,
+              "dir": "west"
+            }
+          },
+          "time_of_day": 3514
+        },
+        "thought": "",
+        "action": {
+          "tool": "read_data",
+          "args": {
+            "target": "stone_pickaxe"
+          }
+        },
+        "result": "{\"name\":\"stone_pickaxe\",\"displayName\":\"Stone Pickaxe\",\"craftable\":true,\"recipes\":[{\"ingredients\":{\"cobbled_deepslate\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"stick\":2,\"blackstone\":3},\"makes\":1,\"needs_crafting_table\":true},{\"ingredients\":{\"cobblestone\":3,\"stick\":2},\"makes\":1,\"needs_crafting_table\":true}]}",
+        "ok": true,
+        "pos": [
+          -1.6,
+          61,
+          90.5
+        ]
+      },
+      {
+        "i": 18,
+        "observation": {
+          "position": {
+            "x": -1.6,
+            "y": 61,
+            "z": 90.5
+          },
+          "facing": "east",
+          "health": 20,
+          "food": 13,
+          "on_ground": true,
+          "inventory": {
+            "wooden_pickaxe": 1,
+            "dirt": 10,
+            "leaf_litter": 15,
+            "stick": 64,
+            "crafting_table": 1,
+            "birch_planks": 1,
+            "oak_planks": 8,
+            "cobblestone": 3
+          },
+          "surroundings": {
+            "block_in_front": "air",
+            "block_in_front_head": "air",
+            "can_step_up": false,
+            "blocked": false,
+            "standing_on": "stone",
+            "above_head": "air",
+            "drop_ahead": true
+          },
+          "nearby": {
+            "copper_ore": {
+              "at": {
+                "x": -1,
+                "y": 57,
+                "z": 88
+              },
+              "dist": 4.7,
+              "dir": "north-east"
+            },
+            "coal_ore": {
+              "at": {
+                "x": -14,
+                "y": 55,
+                "z": 90
+              },
+              "dist": 13.8,
+              "dir": "west"
+            }
+          },
+          "time_of_day": 3554
+        },
+        "thought": "",
+        "action": {
+          "tool": "craft",
+          "args": {
+            "item": "stone_pickaxe"
+          }
+        },
+        "result": "Crafted 1x stone_pickaxe",
+        "ok": true,
+        "pos": [
+          -1.6,
+          61,
+          90.5
+        ]
+      }
+    ]
+  }
+}
