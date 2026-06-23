@@ -220,7 +220,7 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'stop',
-      description: 'End the task. Call when goal is complete OR truly stuck.',
+      description: 'End the task. Call ONLY when the goal is complete, OR you have genuinely exhausted your options after trying several different approaches. A single failed step is not "stuck".',
       parameters: { type: 'object', properties: {} }
     }
   }

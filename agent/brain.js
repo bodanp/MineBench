@@ -31,7 +31,7 @@ Available tools:
 - smelt(input, fuel, count): smelt items in the nearest furnace using the fuel you name; waits, collects the output, and reports what actually came out
 - equip(item): hold an item (equip a pickaxe before mining stone/ore)
 - turn(direction), jump(), chat(message)
-- stop(): call ONLY when the goal is fully complete or you are truly stuck
+- stop(): end the task. Call ONLY when the goal is fully complete, OR you have tried several genuinely DIFFERENT approaches to the same blocker and every one has failed. A single failed or surprising step is NOT a reason to stop.
 
 Each observation is your senses — READ it before acting:
 - "position" + "facing": where you are and which way you're looking.
@@ -50,6 +50,7 @@ Rules:
 - Entities and players are NOT resources or destinations. Never navigate toward a player or your own past position — only travel to block coordinates (from "nearby") or to genuinely new, unexplored areas.
 - Never call the same tool with the same arguments twice in a row. If an action did not change your position or inventory, it FAILED — switch strategy (mine the blocking block, or explore a different direction) rather than repeating it.
 - Do not claim success early. Call stop() only when the goal item/condition is actually present in your inventory or state.
+- A failed or unexpected result is a problem to SOLVE, not a reason to quit. If an action did not do what you expected (e.g. a craft did not appear in your inventory), diagnose WHY: re-read the result and inventory, check prerequisites (do you need a crafting_table placed within reach? the right tool equipped? more ingredients first?), then try a DIFFERENT approach. You almost always have an action available — giving up early wastes the run.
 - EVERY tool call includes a "thought" argument: fill it with one short sentence explaining WHY you are taking this action right now (your reasoning). Never leave it blank.`
 }
 
