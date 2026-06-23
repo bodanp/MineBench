@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MineBench Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1><span class="cube">◼</span> MineBench <span class="muted">Dashboard</span></h1>
+      <div class="meta" id="header-meta"></div>
+    </div>
+  </header>
+
+  <main class="wrap" id="app">
+    <section id="live-section" class="live hidden">
+      <div class="live-head">
+        <span class="live-dot"></span>
+        <span class="live-label">LIVE</span>
+        <span id="live-status" class="live-status"></span>
+      </div>
+      <div id="live-title" class="live-title"></div>
+      <div class="live-progress"><div id="live-bar" class="live-bar"></div></div>
+      <div id="live-current" class="live-current"></div>
+      <div class="live-cols">
+        <div class="live-steps-wrap">
+          <h3>Steps <span id="live-stepcount" class="muted"></span></h3>
+          <div class="table-wrap"><table id="live-steps" class="steps"></table></div>
+        </div>
+        <div class="live-side">
+          <h3>Inventory</h3>
+          <div id="live-inventory" class="inv-chips"></div>
+          <div id="live-scorecard" class="live-scorecard"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="empty" class="empty hidden">
+      <h2>No results yet</h2>
+      <p>Run a benchmark, then regenerate the dashboard:</p>
+      <pre><code>node bench.js --task gather_wood
+npm run dashboard</code></pre>
+    </section>
+
+    <section id="overview" class="cards"></section>
+
+    <section id="leaderboard-section">
+      <h2>Leaderboard <span class="muted">by model</span></h2>
+      <div class="table-wrap"><table id="leaderboard"></table></div>
+    </section>
+
+    <section id="matrix-section">
+      <h2>Task <span class="muted">×</span> Model</h2>
+      <p class="hint">Click a cell to inspect that run.</p>
+      <div class="table-wrap"><table id="matrix"></table></div>
+    </section>
+
+    <section id="runs-section">
+      <h2>All runs</h2>
+      <p class="hint">Click a row to view the step-by-step trace.</p>
+      <div class="table-wrap"><table id="runs"></table></div>
+    </section>
+  </main>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel">
+      <button class="modal-close" data-close aria-label="Close">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <footer class="site-footer wrap">
+    <span class="muted">Generated artifact — regenerate with <code>npm run dashboard</code>.</span>
+  </footer>
+
+  <!-- Data first (generated), then the app. Missing data.js => empty state. -->
+  <script src="data.js" onerror="window.__DATA_MISSING__=true"></script>
+  <script src="app.js"></script>
+  <!-- Live feed: active only when served by dashboard/live-server.js (http), inert on file://. -->
+  <script src="live.js"></script>
+</body>
+</html>
