@@ -19,6 +19,7 @@ const { run } = require('./harness/runner')
 const { resolveModel } = require('./agent/models')
 const { score } = require('./scoring/scorer')
 const { saveResult } = require('./scoring/store')
+const { createLiveEmitter } = require('./dashboard/live-client')
 
 const TASKS_DIR = path.join(__dirname, 'tasks')
 
@@ -72,7 +73,10 @@ async function main() {
   }
 
   console.log(`\n▶ Running task "${task.id}" with model "${model.name}" (max ${task.max_steps} steps)\n`)
-  const trace = await run({ task, model, verbose: args.verbose === true })
+  // Live dashboard sink: streams run_start/step/run_end to dashboard/live-server.js if it's
+  // running (no-op otherwise). Start it with `npm run dashboard:live` to watch live.
+  const emit = createLiveEmitter()
+  const trace = await run({ task, model, verbose: args.verbose === true, onEvent: emit })
   const card = score(trace, task)
 
   console.log('\n📊 ── Scorecard ──')
@@ -80,6 +84,8 @@ async function main() {
 
   const file = saveResult(card, trace)
   console.log(`\nSaved result -> ${path.relative(__dirname, file)}`)
+  // Await the final event so it flushes to the live server before we exit.
+  await emit({ type: 'run_scored', scorecard: card })
   process.exit(0)
 }
 
