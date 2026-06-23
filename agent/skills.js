@@ -239,18 +239,31 @@ const TOOL_IMPLS = {
     let recipe = bot.recipesFor(itemData.id, null, count, null)[0]
     let table = null
     if (!recipe) {
-      // 2) Otherwise try at a nearby crafting_table (pickaxe, furnace, ...), walking up to
-      //    it first so opening its window doesn't time out from across the room.
+      // 2) Needs the 3x3 grid -> a crafting_table in the world. Find the nearest one.
       table = bot.findBlock({ matching: mcData.blocksByName.crafting_table.id, maxDistance: 32 })
-      recipe = table ? bot.recipesFor(itemData.id, null, count, table)[0] : null
-      if (!recipe) {
-        // Report the REAL reason so the model fixes the right thing.
-        const tablelessExists = bot.recipesAll(itemData.id, null, false).length > 0
-        return tablelessExists
-          ? `Could not craft ${name}: not enough ingredients (did you turn all your planks into sticks?). Get more first.`
-          : `Could not craft ${name}: needs a crafting_table within reach — place one beside you first.`
+      if (!table) {
+        // No table nearby. Distinguish "this recipe needs a table" from "we just lack
+        // ingredients" so the model fixes the RIGHT thing.
+        const needsTable = bot.recipesAll(itemData.id, null, false).length === 0
+        return needsTable
+          ? `Could not craft ${name}: needs a crafting_table — none within 32 blocks. Place one beside you first.`
+          : `Could not craft ${name}: not enough ingredients. Gather more first.`
       }
+      // A table IS nearby. If we still can't make it, the problem is INGREDIENTS, not the
+      // table — say so explicitly (with the table's position) so the model stops looping on
+      // "place another crafting_table" when one is already right next to it.
+      recipe = bot.recipesFor(itemData.id, null, count, table)[0]
+      if (!recipe) {
+        return `Could not craft ${name}: not enough ingredients — a crafting_table is already here at ${formatPos(table.position)}. Gather the missing materials first.`
+      }
+      // Walk up to the table, then CONFIRM we're actually in interaction range before opening
+      // its window. A short/failed path otherwise leaves us too far and bot.craft hangs the
+      // full 20s on "windowOpen did not fire".
       try { await navigate(bot, new goals.GoalLookAtBlock(table.position, bot.world), table.position) } catch (_) {}
+      const dist = bot.entity.position.distanceTo(table.position)
+      if (dist > 4) {
+        return `Could not craft ${name}: a crafting_table is at ${formatPos(table.position)} but I couldn't get close enough to use it (stuck ${dist.toFixed(1)} blocks away). Clear a path to it, or place a crafting_table right beside you.`
+      }
     }
 
     try {
@@ -271,7 +284,7 @@ const TOOL_IMPLS = {
     const i = bot.inventory.items().find(x => x.name === name)
     if (!i) return `No ${name} in inventory.`
     try {
-      await bot.equip(i, 'hand')
+      await equipAndConfirm(bot, i)
       return `Equipped ${name}.`
     } catch (e) {
       return `Failed to equip ${item}: ${e.message}`
@@ -423,11 +436,20 @@ async function ensureHarvestTool(bot, block) {
     return { error: `Could not collect ${block.name}: it needs a proper tool (a pickaxe) equipped or it drops NOTHING. Craft and equip a pickaxe first, then mine.` }
   }
   try {
-    await bot.equip(usable, 'hand')
+    await equipAndConfirm(bot, usable)
     return { note: ` (equipped ${usable.name} first)` }
   } catch (e) {
     return { error: `Failed to equip ${usable.name} to mine ${block.name}: ${e.message}` }
   }
+}
+
+// bot.equip resolves when the server ACKs the inventory move, but the actual held-hand slot
+// can take an extra tick to update — so the NEXT action (e.g. mine_block) may run while the
+// hand still holds the OLD item (the "it only switched after mining" bug). Wait until the
+// hand actually holds the requested item (short bounded poll) before returning.
+async function equipAndConfirm(bot, item) {
+  await bot.equip(item, 'hand')
+  for (let i = 0; i < 20 && bot.heldItem?.type !== item.type; i++) await sleep(25)
 }
 
 // After breaking a block, its drop spawns near `pos` as an item entity. Walk onto it so the
