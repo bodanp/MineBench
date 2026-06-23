@@ -72,7 +72,7 @@ async function main() {
   }
 
   console.log(`\n▶ Running task "${task.id}" with model "${model.name}" (max ${task.max_steps} steps)\n`)
-  const trace = await run({ task, model })
+  const trace = await run({ task, model, verbose: args.verbose === true })
   const card = score(trace, task)
 
   console.log('\n📊 ── Scorecard ──')

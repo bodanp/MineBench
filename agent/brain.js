@@ -50,12 +50,51 @@ Rules:
 - If "surroundings.blocked" is true (a 2-tall wall) or your position barely changes between steps, mine_block the block in front or move_to around it. If "surroundings.can_step_up" is true, use move_forward to hop it. Do not keep repeating the same failing move_to.
 - Entities and players are NOT resources or destinations. Never navigate toward a player or your own past position — only travel to block coordinates (from "nearby") or to genuinely new, unexplored areas.
 - Never call the same tool with the same arguments twice in a row. If an action did not change your position or inventory, it FAILED — switch strategy (mine the blocking block, or explore a different direction) rather than repeating it.
-- Do not claim success early. Call stop() only when the goal item/condition is actually present in your inventory or state.`
+- Do not claim success early. Call stop() only when the goal item/condition is actually present in your inventory or state.
+- EVERY tool call includes a "thought" argument: fill it with one short sentence explaining WHY you are taking this action right now (your reasoning). Never leave it blank.`
+}
+
+// Reasoning models (e.g. gpt-5.x) usually return an EMPTY `content` when they emit a tool
+// call — their rationale lives in a separate reasoning field instead. Coalesce the known
+// shapes into a single readable string so the trace captures the thought when it's exposed
+// (best-effort: some models hide reasoning entirely, leaving this empty).
+function extractThought(msg) {
+  if (!msg) return ''
+  const flatten = (r) => {
+    if (!r) return ''
+    if (typeof r === 'string') return r
+    if (Array.isArray(r)) return r.map(flatten).filter(Boolean).join('\n')
+    if (typeof r === 'object') return flatten(r.summary ?? r.text ?? r.content ?? '')
+    return ''
+  }
+  const thought = msg.content || msg.reasoning_content || flatten(msg.reasoning)
+  return (typeof thought === 'string' ? thought : flatten(thought)).trim()
+}
+
+// gpt-5.x (and other reasoning models) return NO `content` and NO readable reasoning when
+// they emit a tool call — the chain-of-thought is encrypted server-side and never surfaced
+// (confirmed for Copilot gpt-5.4 via both chat-completions and the Responses API summary).
+// So the only model-agnostic way to capture a rationale is to ASK the model to state one as
+// a tool-call argument. We inject a `thought` string into every tool's schema; the model
+// fills it in, and we read it back deterministically — works for every model, reasoning or not.
+function addThoughtParam(toolSchemas) {
+  return (toolSchemas || []).map(t => {
+    if (t.type !== 'function' || !t.function) return t
+    const params = t.function.parameters || { type: 'object', properties: {} }
+    // `thought` first so the model articulates intent BEFORE choosing the action's args.
+    const properties = {
+      thought: { type: 'string', description: 'One short sentence: WHY you are taking this action right now (your reasoning). Always fill this in.' },
+      ...(params.properties || {})
+    }
+    const required = Array.from(new Set([...(params.required || []), 'thought']))
+    return { ...t, function: { ...t.function, parameters: { ...params, type: params.type || 'object', properties, required } } }
+  })
 }
 
 function createAgent({ model, goal, toolSchemas }) {
   let messages = []
   let pendingToolCalls = []   // tool_calls from the latest assistant msg still awaiting a tool reply
+  const tools = addThoughtParam(toolSchemas)   // every tool gains a `thought` arg we read back
   return {
     model: model.name,
 
@@ -69,7 +108,7 @@ function createAgent({ model, goal, toolSchemas }) {
         role: 'user',
         content: `Current state:\n${JSON.stringify(observation)}${nudge}\nWhat do you do next?`
       })
-      const msg = await model.complete({ messages, tools: toolSchemas })
+      const msg = await model.complete({ messages, tools })
       messages.push(msg)
       // The model may emit several tool_calls in one turn; we execute only the first, but
       // the API REQUIRES a tool reply for EVERY id — track them all so recordResult can
@@ -85,17 +124,22 @@ function createAgent({ model, goal, toolSchemas }) {
           role: 'user',
           content: 'You did not call a tool. Respond with exactly ONE tool call. Call stop() only if the goal is fully complete.'
         })
-        lastMsg = await model.complete({ messages, tools: toolSchemas })
+        lastMsg = await model.complete({ messages, tools })
         messages.push(lastMsg)
         pendingToolCalls = (lastMsg.tool_calls || []).slice()
       }
 
-      const thought = lastMsg.content || ''
       const call = pendingToolCalls[0]
-      if (!call) return { thought, done: true, reason: 'no_tool_call' }
+      if (!call) return { thought: extractThought(lastMsg), done: true, reason: 'no_tool_call' }
 
       let args = {}
       try { args = JSON.parse(call.function.arguments || '{}') } catch { args = {} }
+      // The model writes its rationale into the injected `thought` arg. Pull it out for the
+      // trace/logs, then strip it so the tool impl only sees its real parameters. Fall back
+      // to any message content/reasoning for models that DO expose it.
+      const argThought = typeof args.thought === 'string' ? args.thought.trim() : ''
+      if ('thought' in args) delete args.thought
+      const thought = argThought || extractThought(lastMsg)
       return { thought, toolCallId: call.id, tool: call.function.name, args }
     },
 
@@ -113,4 +157,4 @@ function createAgent({ model, goal, toolSchemas }) {
   }
 }
 
-module.exports = { createAgent, buildSystemPrompt }
+module.exports = { createAgent, buildSystemPrompt, extractThought, addThoughtParam }
