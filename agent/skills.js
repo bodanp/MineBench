@@ -109,6 +109,20 @@ const TOOL_SCHEMAS = [
   {
     type: 'function',
     function: {
+      name: 'read_data',
+      description: 'Look up the game data for an item or block and get the raw FACTS in readable form (names instead of numbers): every crafting recipe with its ingredient names + amounts and whether it needs a crafting_table, and — for blocks — what the block drops and which tools yield a drop. This is a reference lookup, NOT instructions: it does not tell you what to do or pick a recipe for you. YOU read the facts and decide which recipe to use and what to do next. Returns JSON: { name, recipes, mining }.',
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', description: 'Item or block name to look up, e.g. "stone_pickaxe", "oak_planks", "iron_ore". Lowercase underscored names work best; "minecraft:" prefix and spaces are tolerated.' }
+        },
+        required: ['target']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'turn',
       description: 'Turn the bot to face a cardinal direction.',
       parameters: {
@@ -175,13 +189,14 @@ const TOOL_IMPLS = {
       await bot.dig(block)
       return `Mined ${block_type} at ${formatPos(block.position)}`
     } catch (e) {
-      // Navigation may have stalled but left us within reach — try digging anyway.
-      try {
-        if (bot.entity.position.distanceTo(block.position) <= 5) {
-          await bot.dig(block)
-          return `Mined ${block_type} at ${formatPos(block.position)} (recovered after getting stuck)`
-        }
-      } catch (_) { /* fall through to the failure message */ }
+      // UNSTUCK ASSISTANCE DISABLED — previously, if navigation stalled but left us
+      // within reach, we dug anyway to recover from getting stuck.
+      // try {
+      //   if (bot.entity.position.distanceTo(block.position) <= 5) {
+      //     await bot.dig(block)
+      //     return `Mined ${block_type} at ${formatPos(block.position)} (recovered after getting stuck)`
+      //   }
+      // } catch (_) { /* fall through to the failure message */ }
       return `Failed to mine ${block_type}: ${e.message}`
     }
   },
@@ -260,6 +275,65 @@ const TOOL_IMPLS = {
     return JSON.stringify({ nearby_blocks: nearbyBlocks, entities })
   },
 
+  async read_data(bot, { target }) {
+    if (!target || typeof target !== 'string') {
+      return 'No target given. Call read_data with an item/block name, e.g. read_data({ target: "stone_pickaxe" }).'
+    }
+    let mcData
+    try {
+      mcData = loadMcData(bot)
+    } catch (e) {
+      return `Could not load the knowledge base: ${e.message}`
+    }
+    if (!mcData || !mcData.itemsByName) return 'Knowledge base unavailable for this version.'
+
+    const name = normalizeName(target)
+    const item = mcData.itemsByName[name]
+    const block = mcData.blocksByName[name]
+    if (!item && !block) {
+      const guesses = suggestNames(mcData, name)
+      return `Unknown "${target}". ${guesses.length ? 'Did you mean: ' + guesses.join(', ') + '?' : 'Not found in the knowledge base.'}`
+    }
+
+    // This is a READER, not a planner: it only resolves the raw numeric JSON
+    // (node_modules/minecraft-data) into readable names and reports the facts as-is.
+    // It does NOT pick a "best" recipe, order steps, or build a plan — the model does
+    // all of that reasoning itself from these facts.
+    const out = { name }
+    const displayName = item?.displayName || block?.displayName
+    if (displayName) out.displayName = displayName
+
+    // Every crafting recipe for this item, ids resolved to names. No ranking/filtering.
+    const recipes = item ? (mcData.recipes[item.id] || []) : []
+    const seenRecipes = new Set()
+    const readableRecipes = []
+    for (const r of recipes) {
+      const ingredients = mapCounts(mcData, recipeIngredients(r))
+      const entry = { ingredients, makes: resultCount(r), needs_crafting_table: needsTable(r) }
+      const key = JSON.stringify(entry)
+      if (seenRecipes.has(key)) continue   // drop exact-duplicate rows, not real choices
+      seenRecipes.add(key)
+      readableRecipes.push(entry)
+      if (readableRecipes.length >= 12) break
+    }
+    out.craftable = readableRecipes.length > 0
+    if (readableRecipes.length) out.recipes = readableRecipes
+
+    // Mining facts for a world block: what it drops + which tools yield a drop.
+    if (block && block.diggable) {
+      const tools = block.harvestTools
+        ? Object.keys(block.harvestTools).map(id => mcData.items[+id]?.name).filter(Boolean)
+        : []
+      out.mining = {
+        drops: blockDropIds(block).map(id => idToName(mcData, id)),
+        hardness: block.hardness,
+        tools_that_get_a_drop: tools.length ? tools : 'any (hand works)'
+      }
+    }
+
+    return JSON.stringify(out)
+  },
+
   async turn(bot, { direction }) {
     const yaws = { south: 0, west: Math.PI / 2, north: Math.PI, east: -Math.PI / 2 }
     await bot.look(yaws[direction], 0, true)
@@ -327,23 +401,23 @@ async function faceXZ(bot, target) {
   await bot.look(Math.atan2(-dx, dz), 0, true)
 }
 
-// Last-resort unstick: dig the block(s) directly in front (feet + head height) so the
-// bot can ALWAYS get past a 1-2 block obstacle — if you can't go over it, go through it.
-async function digInFront(bot) {
-  const yaw = bot.entity.yaw
-  const fx = Math.round(-Math.sin(yaw))
-  const fz = Math.round(Math.cos(yaw))
-  if (fx === 0 && fz === 0) return 0
-  const isSolid = (n) => n && n !== 'air' && n !== 'cave_air' && n !== 'water' && n !== 'lava'
-  let dug = 0
-  for (const cell of [bot.entity.position.offset(fx, 1, fz), bot.entity.position.offset(fx, 0, fz)]) {
-    const b = bot.blockAt(cell)
-    if (b && isSolid(b.name) && bot.canDigBlock(b)) {
-      try { await bot.dig(b); dug++ } catch (_) { /* skip if it can't be dug right now */ }
-    }
-  }
-  return dug
-}
+// UNSTUCK ASSISTANCE DISABLED — last-resort unstick that dug the block(s) directly in
+// front (feet + head height) so the bot could always get past a 1-2 block obstacle.
+// async function digInFront(bot) {
+//   const yaw = bot.entity.yaw
+//   const fx = Math.round(-Math.sin(yaw))
+//   const fz = Math.round(Math.cos(yaw))
+//   if (fx === 0 && fz === 0) return 0
+//   const isSolid = (n) => n && n !== 'air' && n !== 'cave_air' && n !== 'water' && n !== 'lava'
+//   let dug = 0
+//   for (const cell of [bot.entity.position.offset(fx, 1, fz), bot.entity.position.offset(fx, 0, fz)]) {
+//     const b = bot.blockAt(cell)
+//     if (b && isSolid(b.name) && bot.canDigBlock(b)) {
+//       try { await bot.dig(b); dug++ } catch (_) { /* skip if it can't be dug right now */ }
+//     }
+//   }
+//   return dug
+// }
 
 // Walk forward for `ms`, hopping ONCE whenever forward progress stalls on the ground.
 // Holding jump the whole time makes the bot bounce off the ledge and never settle on it.
@@ -370,19 +444,21 @@ async function walkForwardHopping(bot, ms) {
   return +start.distanceTo(bot.entity.position).toFixed(1)
 }
 
-// Run pathfinder.goto, but reject with "stuck" if the bot stops making progress so we
-// never hang forever wedged against a block.
+// Run pathfinder.goto with only a hard overall time cap so it can't hang forever.
+// UNSTUCK ASSISTANCE DISABLED — the stall detection (aborting with "stuck" when the bot
+// stopped making progress, which triggered stuck-recovery) has been commented out.
 function gotoWithStallGuard(bot, goal, { stallMs = 2000, maxMs = 12000 } = {}) {
   return new Promise((resolve, reject) => {
-    let last = bot.entity.position.clone()
-    let lastProgress = Date.now()
+    // let last = bot.entity.position.clone()
+    // let lastProgress = Date.now()
     const started = Date.now()
     let settled = false
     const finish = (fn) => { if (settled) return; settled = true; clearInterval(timer); fn() }
     const timer = setInterval(() => {
-      const now = bot.entity.position
-      if (last.distanceTo(now) > 0.15) { last = now.clone(); lastProgress = Date.now() }
-      if (Date.now() - lastProgress > stallMs || Date.now() - started > maxMs) {
+      // const now = bot.entity.position
+      // if (last.distanceTo(now) > 0.15) { last = now.clone(); lastProgress = Date.now() }
+      // Stall-based stuck detection removed; only the hard maxMs cap remains.
+      if (/* Date.now() - lastProgress > stallMs || */ Date.now() - started > maxMs) {
         try { bot.pathfinder.stop() } catch (_) {}
         finish(() => reject(new Error('stuck')))
       }
@@ -394,24 +470,27 @@ function gotoWithStallGuard(bot, goal, { stallMs = 2000, maxMs = 12000 } = {}) {
   })
 }
 
-// Navigate to a goal with automatic stuck-recovery: if pathfinder wedges against a
-// 1-block step, stop it, hop forward toward the target, then (if still wedged) dig through.
+// Navigate to a goal. UNSTUCK ASSISTANCE DISABLED — the automatic stuck-recovery (on a
+// stall: facing the target, digging through the obstacle, then hopping forward, retried
+// up to 4 times) has been commented out. Navigation now makes a single attempt.
 async function navigate(bot, goal, target) {
   bot.pathfinder.setMovements(getMovements(bot))
-  let lastErr
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      await gotoWithStallGuard(bot, goal)
-      return true
-    } catch (e) {
-      lastErr = e
-      try { bot.pathfinder.stop() } catch (_) {}
-      if (target) { try { await faceXZ(bot, target) } catch (_) {} }
-      if (attempt >= 1) { try { await digInFront(bot) } catch (_) {} }
-      await walkForwardHopping(bot, 1000)
-    }
-  }
-  throw new Error((lastErr && lastErr.message) || 'could not navigate')
+  await gotoWithStallGuard(bot, goal)
+  return true
+  // let lastErr
+  // for (let attempt = 0; attempt < 4; attempt++) {
+  //   try {
+  //     await gotoWithStallGuard(bot, goal)
+  //     return true
+  //   } catch (e) {
+  //     lastErr = e
+  //     try { bot.pathfinder.stop() } catch (_) {}
+  //     if (target) { try { await faceXZ(bot, target) } catch (_) {} }
+  //     if (attempt >= 1) { try { await digInFront(bot) } catch (_) {} }
+  //     await walkForwardHopping(bot, 1000)
+  //   }
+  // }
+  // throw new Error((lastErr && lastErr.message) || 'could not navigate')
 }
 
 // Jump straight up and place a block under your feet at the apex (pillar up by 1).
@@ -440,6 +519,91 @@ async function pillarUp(bot, item, name) {
     bot.setControlState('jump', false)
     return `Failed to pillar up with ${name}: ${e.message}`
   }
+}
+
+// ─────────────────────────────────────────────
+// KNOWLEDGE-BASE READER (minecraft-data)
+// Turns the raw, numeric, deeply-nested JSON in
+// node_modules/minecraft-data/.../<version> (items.json, blocks.json, recipes.json)
+// into human-readable facts (names instead of ids). It only TRANSLATES the data — it
+// makes no decisions; the model reasons over the facts itself.
+// ─────────────────────────────────────────────
+
+// Cache the loaded data on the bot (it indexes the same JSON files mineflayer uses).
+function loadMcData(bot) {
+  if (!bot._mbMcData) bot._mbMcData = require('minecraft-data')(bot.version)
+  return bot._mbMcData
+}
+
+function normalizeName(s) {
+  return String(s).trim().toLowerCase().replace(/^minecraft:/, '').replace(/\s+/g, '_')
+}
+
+// Suggest close item/block names for a typo'd/unknown lookup.
+function suggestNames(mcData, name) {
+  const pool = new Set([...Object.keys(mcData.itemsByName), ...Object.keys(mcData.blocksByName)])
+  const out = []
+  for (const n of pool) {
+    if (n.includes(name) || name.includes(n)) { out.push(n); if (out.length >= 5) break }
+  }
+  return out
+}
+
+// Map any item/block id to a readable name (prefer item names, fall back to blocks).
+function idToName(mcData, id) {
+  return mcData.items[id]?.name || mcData.blocks[id]?.name || `id_${id}`
+}
+
+// A recipe cell/ingredient may be: null, a number, an {id,count} object, or an array of
+// choices (any-of). Reduce it to a single item id (or null for an empty slot).
+function ingredientId(x) {
+  if (x == null) return null
+  if (typeof x === 'number') return x < 0 ? null : x
+  if (Array.isArray(x)) return ingredientId(x[0])
+  if (typeof x === 'object') return ingredientId(x.id)
+  return null
+}
+
+// Aggregate a recipe's inputs into { itemId: count }, handling shaped + shapeless forms.
+function recipeIngredients(recipe) {
+  const counts = {}
+  const add = (id) => { if (id != null) counts[id] = (counts[id] || 0) + 1 }
+  if (recipe.inShape) {
+    for (const row of recipe.inShape) for (const cell of row) add(ingredientId(cell))
+  } else if (recipe.ingredients) {
+    for (const ing of recipe.ingredients) add(ingredientId(ing))
+  }
+  return counts
+}
+
+function resultCount(recipe) {
+  const r = recipe.result
+  if (r == null || typeof r === 'number') return 1
+  return r.count || 1
+}
+
+// A recipe fits a 2x2 inventory grid (no table) only if it is shapeless with <=4 inputs
+// or shaped within a 2x2 footprint; anything larger needs a crafting_table.
+function needsTable(recipe) {
+  if (!recipe.inShape) return (recipe.ingredients || []).length > 4
+  const rows = recipe.inShape.length
+  const cols = Math.max(...recipe.inShape.map(r => r.length))
+  return rows > 2 || cols > 2
+}
+
+function mapCounts(mcData, idCounts) {
+  const out = {}
+  for (const [id, c] of Object.entries(idCounts)) out[idToName(mcData, +id)] = c
+  return out
+}
+
+// Normalize a block's drops (numbers or {drop:{id}} objects) into an array of item ids.
+function blockDropIds(block) {
+  return (block.drops || []).map(d => {
+    if (typeof d === 'number') return d
+    if (d && typeof d === 'object') return d.drop?.id ?? d.drop ?? d.item ?? null
+    return null
+  }).filter(id => id != null)
 }
 
 module.exports = { TOOL_SCHEMAS, TOOL_IMPLS, executeAction, STOP_SIGNAL }
