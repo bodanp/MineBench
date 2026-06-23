@@ -184,19 +184,26 @@ const TOOL_IMPLS = {
     const block = bot.findBlock({ matching: blockId, maxDistance: 32 })
     if (!block) return `No ${block_type} found within 32 blocks.`
 
+    // Make sure we'll actually COLLECT a drop: stone/ores break into nothing unless the
+    // right tool is held. Auto-equip the best tool we own; refuse if we have none so the
+    // model goes and crafts a pickaxe instead of wasting the block by hand.
+    const tool = await ensureHarvestTool(bot, block)
+    if (tool.error) return tool.error
+
     try {
       await navigate(bot, new goals.GoalLookAtBlock(block.position, bot.world), block.position)
       await bot.dig(block)
-      return `Mined ${block_type} at ${formatPos(block.position)}`
+      await collectNearbyDrops(bot, block.position)
+      return `Mined ${block_type} at ${formatPos(block.position)}${tool.note}`
     } catch (e) {
-      // UNSTUCK ASSISTANCE DISABLED — previously, if navigation stalled but left us
-      // within reach, we dug anyway to recover from getting stuck.
-      // try {
-      //   if (bot.entity.position.distanceTo(block.position) <= 5) {
-      //     await bot.dig(block)
-      //     return `Mined ${block_type} at ${formatPos(block.position)} (recovered after getting stuck)`
-      //   }
-      // } catch (_) { /* fall through to the failure message */ }
+      // Navigation may have stalled but left us within reach — try digging anyway.
+      try {
+        if (bot.entity.position.distanceTo(block.position) <= 5) {
+          await bot.dig(block)
+          await collectNearbyDrops(bot, block.position)
+          return `Mined ${block_type} at ${formatPos(block.position)}${tool.note} (recovered after getting stuck)`
+        }
+      } catch (_) { /* fall through to the failure message */ }
       return `Failed to mine ${block_type}: ${e.message}`
     }
   },
@@ -211,15 +218,7 @@ const TOOL_IMPLS = {
       return pillarUp(bot, item, block_type)
     }
 
-    try {
-      await bot.equip(item, 'hand')
-      const refBlock = bot.blockAt(bot.entity.position.offset(dx, dy - 1, dz))
-      if (!refBlock || refBlock.name === 'air') return `No solid block to place against at offset (${dx},${dy},${dz}).`
-      await bot.placeBlock(refBlock, { x: 0, y: 1, z: 0 })
-      return `Placed ${block_type} at offset (${dx},${dy},${dz})`
-    } catch (e) {
-      return `Failed to place ${block_type}: ${e.message}`
-    }
+    return placeOnSurface(bot, item, block_type, dx, dy, dz)
   },
 
   async craft(bot, { item, count = 1 }) {
@@ -227,15 +226,31 @@ const TOOL_IMPLS = {
     const itemData = mcData.itemsByName[item]
     if (!itemData) return `Unknown item: ${item}`
 
-    const craftingTable = bot.findBlock({
-      matching: mcData.blocksByName.crafting_table.id,
-      maxDistance: 8
-    })
-    const recipe = bot.recipesFor(itemData.id, null, count, craftingTable)[0]
-    if (!recipe) return `No recipe found for ${item} (need crafting table?).`
+    // 1) Craftable right now in the 2x2 inventory grid? (planks, sticks, the table itself)
+    let recipe = bot.recipesFor(itemData.id, null, count, null)[0]
+    let table = null
+    if (!recipe) {
+      // 2) Otherwise try at a nearby crafting_table (pickaxe, furnace, ...), walking up to
+      //    it first so opening its window doesn't time out from across the room.
+      table = bot.findBlock({ matching: mcData.blocksByName.crafting_table.id, maxDistance: 32 })
+      recipe = table ? bot.recipesFor(itemData.id, null, count, table)[0] : null
+      if (!recipe) {
+        // Report the REAL reason so the model fixes the right thing.
+        const tablelessExists = bot.recipesAll(itemData.id, null, false).length > 0
+        return tablelessExists
+          ? `Could not craft ${item}: not enough ingredients (did you turn all your planks into sticks?). Get more first.`
+          : `Could not craft ${item}: needs a crafting_table within reach — place one beside you first.`
+      }
+      try { await navigate(bot, new goals.GoalLookAtBlock(table.position, bot.world), table.position) } catch (_) {}
+    }
 
     try {
-      await bot.craft(recipe, count, craftingTable)
+      await bot.craft(recipe, count, table)
+      // Crafting at a table leaves its window open, which makes the just-crafted item briefly
+      // unfindable for equip/mine_block (the inventory looks right but item moves fail). Close
+      // the window and wait for the result to settle into inventory before the next action.
+      if (bot.currentWindow) { try { await bot.closeWindow(bot.currentWindow) } catch (_) {} }
+      for (let i = 0; i < 12 && !bot.inventory.items().some(it => it.name === item); i++) await sleep(50)
       return `Crafted ${count}x ${item}`
     } catch (e) {
       return `Failed to craft ${item}: ${e.message}`
@@ -384,6 +399,42 @@ function formatPos(p) {
   return `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`
 }
 
+// Ensure the bot is holding a tool that will actually drop `block`. Blocks like stone and
+// ores expose `harvestTools` (the set of items that yield a drop); breaking them with the
+// wrong tool or a bare hand destroys the block for nothing.
+//   -> { note }  : '' or ' (equipped X first)' to append to a success message
+//   -> { error } : a message to return immediately (no usable tool in inventory)
+async function ensureHarvestTool(bot, block) {
+  if (!block || !block.harvestTools) return { note: '' }                      // any tool/hand drops it
+  if (bot.heldItem && block.harvestTools[bot.heldItem.type]) return { note: '' }
+
+  const usable = bot.inventory.items().find(i => block.harvestTools[i.type])
+  if (!usable) {
+    return { error: `Could not collect ${block.name}: it needs a proper tool (a pickaxe) equipped or it drops NOTHING. Craft and equip a pickaxe first, then mine.` }
+  }
+  try {
+    await bot.equip(usable, 'hand')
+    return { note: ` (equipped ${usable.name} first)` }
+  } catch (e) {
+    return { error: `Failed to equip ${usable.name} to mine ${block.name}: ${e.message}` }
+  }
+}
+
+// After breaking a block, its drop spawns near `pos` as an item entity. Walk onto it so the
+// bot auto-collects it — mining from a distance (or the stuck-recovery dig) otherwise leaves
+// the drop on the ground (e.g. cobblestone never picked up, so the run shows 0 progress).
+async function collectNearbyDrops(bot, pos) {
+  const nearestDrop = () => Object.values(bot.entities)
+    .filter(e => e.name === 'item' && e.position && e.position.distanceTo(pos) < 3)
+    .sort((a, b) => a.position.distanceTo(pos) - b.position.distanceTo(pos))[0]
+  for (let i = 0; i < 6 && !nearestDrop(); i++) await sleep(50)   // let the drop spawn
+  const drop = nearestDrop()
+  if (!drop) return
+  try {
+    await navigate(bot, new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1), drop.position)
+  } catch (_) { /* best-effort pickup */ }
+}
+
 // One shared, reusable Movements config (recreating it on every call is wasteful).
 function getMovements(bot) {
   if (!bot._mbMovements) {
@@ -491,6 +542,33 @@ async function navigate(bot, goal, target) {
   //   }
   // }
   // throw new Error((lastErr && lastErr.message) || 'could not navigate')
+}
+
+// Place a block reliably: try the cell the model asked for, then fall back to any adjacent
+// ground cell. Pre-checks the target so we don't hang on a placement the server will reject
+// (the "blockUpdate did not fire" timeout) and so utility blocks like a crafting_table
+// always land somewhere reachable.
+async function placeOnSurface(bot, item, name, dx, dy, dz) {
+  try { await bot.equip(item, 'hand') } catch (e) { return `Failed to equip ${name}: ${e.message}` }
+
+  const isAir = (b) => !b || b.name === 'air' || b.name === 'cave_air'
+  const tryAt = async (refBlock) => {
+    if (isAir(refBlock)) return false                                          // nothing solid to place against
+    if (!isAir(bot.blockAt(refBlock.position.offset(0, 1, 0)))) return false   // target cell already filled
+    try { await bot.placeBlock(refBlock, { x: 0, y: 1, z: 0 }); return true } catch (_) { return false }
+  }
+
+  // 1) the cell the model asked for (placed on top of the block just beneath it).
+  if (await tryAt(bot.blockAt(bot.entity.position.offset(dx, dy - 1, dz)))) {
+    return `Placed ${name} at offset (${dx},${dy},${dz}).`
+  }
+  // 2) fallback: on the ground in one of the 4 cells around your feet.
+  for (const [ox, oz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    if (await tryAt(bot.blockAt(bot.entity.position.offset(ox, -1, oz)))) {
+      return `Placed ${name} on the ground beside you.`
+    }
+  }
+  return `Failed to place ${name}: no open spot next to you — move to flatter, clearer ground and retry.`
 }
 
 // Jump straight up and place a block under your feet at the apex (pillar up by 1).
