@@ -13,12 +13,17 @@ async function applyTaskSetup(bot, task, log = () => {}) {
   const s = (task && task.setup) || {}
   const cmds = []
 
+  cmds.push(`/attribute ${bot.username} minecraft:scale base set 0.9999999`)
   for (const [rule, val] of Object.entries(s.gamerules || {})) cmds.push(`/gamerule ${rule} ${val}`)
   if (s.time) cmds.push(`/time set ${s.time}`)
   if (s.weather) cmds.push(`/weather ${s.weather}`)
   if (Array.isArray(s.teleport)) {
     const [x, y, z] = s.teleport
     cmds.push(`/tp ${bot.username} ${x} ${y} ${z}`)
+  } else if (s.teleport === 'spawn') {
+    // Drop the bot on the world spawn — always a safe surface spot, no Y guessing.
+    const sp = bot.spawnPoint
+    if (sp) cmds.push(`/tp ${bot.username} ${sp.x} ${sp.y} ${sp.z}`)
   }
   if (s.clear_inventory !== false) cmds.push(`/clear ${bot.username}`)
   for (const g of (s.give || [])) cmds.push(`/give ${bot.username} ${g.item} ${g.count || 1}`)

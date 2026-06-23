@@ -177,12 +177,16 @@ const TOOL_IMPLS = {
   },
 
   async mine_block(bot, { block_type }) {
-    const mcData = require('minecraft-data')(bot.version)
-    const blockId = mcData.blocksByName[block_type]?.id
-    if (blockId === undefined) return `Unknown block: ${block_type}`
+    const mcData = loadMcData(bot)
+    const name = normalizeName(block_type)
+    const blockId = mcData.blocksByName[name]?.id
+    if (blockId === undefined) {
+      const guesses = suggestNames(mcData, name)
+      return `Unknown block: ${block_type}.${guesses.length ? ' Did you mean: ' + guesses.join(', ') + '?' : ''}`
+    }
 
     const block = bot.findBlock({ matching: blockId, maxDistance: 32 })
-    if (!block) return `No ${block_type} found within 32 blocks.`
+    if (!block) return `No ${name} found within 32 blocks.`
 
     // Make sure we'll actually COLLECT a drop: stone/ores break into nothing unless the
     // right tool is held. Auto-equip the best tool we own; refuse if we have none so the
@@ -194,37 +198,42 @@ const TOOL_IMPLS = {
       await navigate(bot, new goals.GoalLookAtBlock(block.position, bot.world), block.position)
       await bot.dig(block)
       await collectNearbyDrops(bot, block.position)
-      return `Mined ${block_type} at ${formatPos(block.position)}${tool.note}`
+      return `Mined ${name} at ${formatPos(block.position)}${tool.note}`
     } catch (e) {
       // Navigation may have stalled but left us within reach — try digging anyway.
       try {
         if (bot.entity.position.distanceTo(block.position) <= 5) {
           await bot.dig(block)
           await collectNearbyDrops(bot, block.position)
-          return `Mined ${block_type} at ${formatPos(block.position)}${tool.note} (recovered after getting stuck)`
+          return `Mined ${name} at ${formatPos(block.position)}${tool.note} (recovered after getting stuck)`
         }
       } catch (_) { /* fall through to the failure message */ }
-      return `Failed to mine ${block_type}: ${e.message}`
+      return `Failed to mine ${name}: ${e.message}`
     }
   },
 
   async place_block(bot, { block_type, dx, dy, dz }) {
-    const item = bot.inventory.items().find(i => i.name === block_type)
-    if (!item) return `No ${block_type} in inventory.`
+    const name = normalizeName(block_type)
+    const item = bot.inventory.items().find(i => i.name === name)
+    if (!item) return `No ${name} in inventory.`
 
     // Placing into your own feet column means "pillar up": jump and place beneath
     // yourself with the right timing instead of relying on a lucky airborne frame.
     if (dx === 0 && dz === 0 && (dy === 0 || dy === -1)) {
-      return pillarUp(bot, item, block_type)
+      return pillarUp(bot, item, name)
     }
 
-    return placeOnSurface(bot, item, block_type, dx, dy, dz)
+    return placeOnSurface(bot, item, name, dx, dy, dz)
   },
 
   async craft(bot, { item, count = 1 }) {
-    const mcData = require('minecraft-data')(bot.version)
-    const itemData = mcData.itemsByName[item]
-    if (!itemData) return `Unknown item: ${item}`
+    const mcData = loadMcData(bot)
+    const name = normalizeName(item)
+    const itemData = mcData.itemsByName[name]
+    if (!itemData) {
+      const guesses = suggestNames(mcData, name)
+      return `Unknown item: ${item}.${guesses.length ? ' Did you mean: ' + guesses.join(', ') + '?' : ''}`
+    }
 
     // 1) Craftable right now in the 2x2 inventory grid? (planks, sticks, the table itself)
     let recipe = bot.recipesFor(itemData.id, null, count, null)[0]
@@ -238,8 +247,8 @@ const TOOL_IMPLS = {
         // Report the REAL reason so the model fixes the right thing.
         const tablelessExists = bot.recipesAll(itemData.id, null, false).length > 0
         return tablelessExists
-          ? `Could not craft ${item}: not enough ingredients (did you turn all your planks into sticks?). Get more first.`
-          : `Could not craft ${item}: needs a crafting_table within reach — place one beside you first.`
+          ? `Could not craft ${name}: not enough ingredients (did you turn all your planks into sticks?). Get more first.`
+          : `Could not craft ${name}: needs a crafting_table within reach — place one beside you first.`
       }
       try { await navigate(bot, new goals.GoalLookAtBlock(table.position, bot.world), table.position) } catch (_) {}
     }
@@ -250,19 +259,20 @@ const TOOL_IMPLS = {
       // unfindable for equip/mine_block (the inventory looks right but item moves fail). Close
       // the window and wait for the result to settle into inventory before the next action.
       if (bot.currentWindow) { try { await bot.closeWindow(bot.currentWindow) } catch (_) {} }
-      for (let i = 0; i < 12 && !bot.inventory.items().some(it => it.name === item); i++) await sleep(50)
-      return `Crafted ${count}x ${item}`
+      for (let i = 0; i < 12 && !bot.inventory.items().some(it => it.name === name); i++) await sleep(50)
+      return `Crafted ${count}x ${name}`
     } catch (e) {
-      return `Failed to craft ${item}: ${e.message}`
+      return `Failed to craft ${name}: ${e.message}`
     }
   },
 
   async equip(bot, { item }) {
-    const i = bot.inventory.items().find(x => x.name === item)
-    if (!i) return `No ${item} in inventory.`
+    const name = normalizeName(item)
+    const i = bot.inventory.items().find(x => x.name === name)
+    if (!i) return `No ${name} in inventory.`
     try {
       await bot.equip(i, 'hand')
-      return `Equipped ${item}.`
+      return `Equipped ${name}.`
     } catch (e) {
       return `Failed to equip ${item}: ${e.message}`
     }
@@ -440,6 +450,7 @@ function getMovements(bot) {
   if (!bot._mbMovements) {
     const mcData = require('minecraft-data')(bot.version)
     bot._mbMovements = new Movements(bot, mcData)
+    bot._mbMovements.diagonalCost = 1.8
   }
   return bot._mbMovements
 }
