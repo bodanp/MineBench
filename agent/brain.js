@@ -28,6 +28,7 @@ Available tools:
 - mine_block(block_type): walk to and mine the nearest matching block (e.g. "oak_log", "stone")
 - place_block(block_type, dx, dy, dz): place a block at an offset from you; use (0,0,0) to pillar up (climb by placing a block beneath yourself)
 - craft(item, count): craft an item; some recipes require a crafting_table placed within ~8 blocks
+- smelt(input, fuel, count): smelt items in the nearest furnace using the fuel you name; waits, collects the output, and reports what actually came out
 - equip(item): hold an item (equip a pickaxe before mining stone/ore)
 - turn(direction), jump(), chat(message)
 - stop(): call ONLY when the goal is fully complete or you are truly stuck

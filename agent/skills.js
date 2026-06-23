@@ -46,6 +46,31 @@ async function settleInventory(bot, before, wantItem = null) {
   }
 }
 
+// Wait (bounded) for a furnace to finish smelting `want` items. Resolves with the number of
+// output items observed when: the output slot reaches `want`, the input slot empties (nothing
+// left to smelt), or progress stalls with no fuel burning — and always bails at a hard time
+// cap (~12s per item + buffer) so a stuck/under-fuelled furnace can never hang the step.
+async function waitForSmelt(furnace, want) {
+  const outCount = () => furnace.outputItem()?.count || 0
+  const inCount = () => furnace.inputItem()?.count || 0
+  const burning = () => (furnace.fuel || 0) > 0 || (furnace.fuelItem()?.count || 0) > 0
+  const deadline = Date.now() + want * 12000 + 8000
+  let stalls = 0
+  while (Date.now() < deadline) {
+    if (outCount() >= want) break
+    if (inCount() === 0 && (furnace.progress || 0) === 0) break   // nothing left to smelt
+    // No fuel and no active progress: it can't make further output — stop after a couple of
+    // confirmations so a momentary between-items reading doesn't end the wait early.
+    if (!burning() && (furnace.progress || 0) === 0) {
+      if (++stalls >= 3) break
+    } else {
+      stalls = 0
+    }
+    await sleep(500)
+  }
+  return outCount()
+}
+
 // ─────────────────────────────────────────────
 // TOOL SCHEMAS (what the LLM sees)
 // ─────────────────────────────────────────────
@@ -114,6 +139,22 @@ const TOOL_SCHEMAS = [
           count: { type: 'integer', default: 1 }
         },
         required: ['item']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'smelt',
+      description: 'Smelt items in the nearest furnace (within 32 blocks) using a fuel you specify. Loads the input + fuel, waits for smelting to finish, collects the output, and returns any leftovers to your inventory. Reports the VERIFIED result — what actually came out — not advice. Needs the input item and the fuel item already in your inventory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          input: { type: 'string', description: 'Item to smelt, e.g. "raw_iron", "sand", "raw_copper", "potato".' },
+          fuel: { type: 'string', description: 'Fuel item to burn, e.g. "coal", "charcoal", "oak_planks".' },
+          count: { type: 'integer', description: 'How many input items to smelt. Default 1.', default: 1 }
+        },
+        required: ['input', 'fuel']
       }
     }
   },
@@ -336,6 +377,99 @@ const TOOL_IMPLS = {
         : `Craft of ${name} produced nothing; ${name} count unchanged.`
     } catch (e) {
       return `Failed to craft ${name}: ${e.message}`
+    }
+  },
+
+  async smelt(bot, { input, fuel, count = 1 }) {
+    const mcData = loadMcData(bot)
+    const inputName = normalizeName(input)
+    const fuelName = normalizeName(fuel)
+    const want = Math.max(1, Math.floor(Number(count) || 1))
+
+    // Validate both names against the knowledge base, mirroring craft/mine_block: report
+    // the unknown name (with close guesses) rather than failing deeper with a cryptic error.
+    const inputData = mcData.itemsByName[inputName]
+    if (!inputData) {
+      const guesses = suggestNames(mcData, inputName)
+      return `Unknown item: ${input}.${guesses.length ? ' Similar names: ' + guesses.join(', ') + '.' : ''}`
+    }
+    const fuelData = mcData.itemsByName[fuelName]
+    if (!fuelData) {
+      const guesses = suggestNames(mcData, fuelName)
+      return `Unknown fuel: ${fuel}.${guesses.length ? ' Similar names: ' + guesses.join(', ') + '.' : ''}`
+    }
+
+    // Verify we actually hold the input + fuel before opening anything. State only — no advice.
+    const startInv = readInventory(bot)
+    const haveInput = startInv[inputName] || 0
+    const haveFuel = startInv[fuelName] || 0
+    if (haveInput < 1) return `Could not smelt: no ${inputName} in inventory.`
+    if (haveFuel < 1) return `Could not smelt: no ${fuelName} in inventory to use as fuel.`
+    const toSmelt = Math.min(want, haveInput)
+
+    // Locate the furnace exactly like the craft tool locates a crafting_table: nearest within
+    // 32, walk up, then CONFIRM interaction range before opening its window (a short/failed
+    // path otherwise leaves us too far and openFurnace hangs on "windowOpen did not fire").
+    const furnaceBlock = bot.findBlock({ matching: mcData.blocksByName.furnace.id, maxDistance: 32 })
+    if (!furnaceBlock) return `Could not smelt ${inputName}: no furnace within 32 blocks.`
+    try { await navigate(bot, new goals.GoalLookAtBlock(furnaceBlock.position, bot.world), furnaceBlock.position) } catch (_) {}
+    const dist = bot.entity.position.distanceTo(furnaceBlock.position)
+    if (dist > 4) {
+      return `Could not smelt ${inputName}: a furnace is at ${formatPos(furnaceBlock.position)} but I couldn't get close enough to use it (stuck ${dist.toFixed(1)} blocks away).`
+    }
+
+    // Fuel to load: coal/charcoal smelt 8 items each. Load enough for the batch, clamped to
+    // what we own (min 1). The model picked the fuel; we only size the amount sensibly.
+    const fuelToLoad = Math.min(haveFuel, Math.max(1, Math.ceil(toSmelt / 8)))
+
+    let furnace
+    try {
+      furnace = await bot.openFurnace(furnaceBlock)
+    } catch (e) {
+      return `Could not open furnace at ${formatPos(furnaceBlock.position)}: ${e.message}`
+    }
+
+    try {
+      try {
+        await furnace.putFuel(fuelData.id, null, fuelToLoad)
+      } catch (e) {
+        return `Could not load ${fuelName} as fuel: ${e.message}`
+      }
+      try {
+        await furnace.putInput(inputData.id, null, toSmelt)
+      } catch (e) {
+        return `Could not load ${inputName} into the furnace: ${e.message}`
+      }
+
+      // Wait (bounded) for the furnace to actually produce the output. Returns when the
+      // output reaches the batch size, the input slot empties, or progress stalls with no
+      // fuel left — and always bails at the hard time cap so a stuck furnace can't hang us.
+      await waitForSmelt(furnace, toSmelt)
+
+      // Pull the output AND any leftover input/fuel back into the inventory so the reported
+      // state matches reality and nothing is silently abandoned in the furnace.
+      try { if (furnace.outputItem()) await furnace.takeOutput() } catch (_) {}
+      try { if (furnace.inputItem()) await furnace.takeInput() } catch (_) {}
+      try { if (furnace.fuelItem()) await furnace.takeFuel() } catch (_) {}
+
+      // Verify the yield by the inventory delta only (invGain reports just the items whose
+      // count rose) — never assume the smelt worked. The single gained item is the output.
+      await settleInventory(bot, startInv)
+      const gained = invGain(startInv, readInventory(bot))
+      const outputName = Object.keys(gained)[0]
+      const outputCount = outputName ? gained[outputName] : 0
+
+      if (outputCount <= 0) {
+        return `Furnace at ${formatPos(furnaceBlock.position)} produced nothing (no output after smelting ${toSmelt}x ${inputName}).`
+      }
+      const remaining = readInventory(bot)
+      const leftInput = remaining[inputName] || 0
+      if (outputCount < toSmelt) {
+        return `Smelted ${outputCount}x ${outputName} at ${formatPos(furnaceBlock.position)} (${outputCount} of ${toSmelt} requested before the furnace stopped); ${leftInput}x ${inputName} left in inventory.`
+      }
+      return `Smelted ${outputCount}x ${outputName} at ${formatPos(furnaceBlock.position)}.`
+    } finally {
+      try { await bot.closeWindow(furnace) } catch (_) {}
     }
   },
 
