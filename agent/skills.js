@@ -12,8 +12,39 @@
 // returns a human-readable string; strings that start like an error are scored as failures.
 // ─────────────────────────────────────────────
 const { goals, Movements } = require('mineflayer-pathfinder')
+const { readInventory } = require('./observation')
 
 const STOP_SIGNAL = '__STOP__'
+
+// Inventory snapshots let a skill report the VERIFIED change in the world instead of
+// optimistically asserting an action worked. `invGain` returns only the items whose count
+// went UP (positive deltas) between two snapshots — crafting can also consume items, so we
+// never infer success from the total count, only from the specific items that increased.
+function invGain(before, after) {
+  const gained = {}
+  for (const name of Object.keys(after)) {
+    const delta = after[name] - (before[name] || 0)
+    if (delta > 0) gained[name] = delta
+  }
+  return gained
+}
+
+// A mined drop can take a tick or more to land in the inventory after the bot walks onto it.
+// Wait (bounded) for a SPECIFIC item to register when `wantItem` is given, so we don't report
+// "drop not collected" a moment before the real drop arrives — and so unrelated incidental
+// pickups don't end the wait early. Falls back to "any gain" when no item is specified.
+async function settleInventory(bot, before, wantItem = null) {
+  const max = wantItem ? 30 : 12   // ~1.5s for a named drop, ~0.6s for the generic case
+  for (let i = 0; i < max; i++) {
+    const after = readInventory(bot)
+    if (wantItem) {
+      if ((after[wantItem] || 0) > (before[wantItem] || 0)) return
+    } else if (Object.keys(invGain(before, after)).length) {
+      return
+    }
+    await sleep(50)
+  }
+}
 
 // ─────────────────────────────────────────────
 // TOOL SCHEMAS (what the LLM sees)
@@ -171,7 +202,7 @@ const TOOL_IMPLS = {
     const ms = Math.max(0.1, Math.min(Number(seconds) || 1.5, 5)) * 1000
     const traveled = await walkForwardHopping(bot, ms)
     const note = traveled < 0.5
-      ? ' (still blocked — the obstacle may be 2+ blocks tall; turn() to face it, then mine_block it)'
+      ? ' (still blocked — the obstacle may be 2+ blocks tall)'
       : ''
     return `Moved forward ${ms / 1000}s, traveled ${traveled} blocks to ${formatPos(bot.entity.position)}${note}`
   },
@@ -182,7 +213,7 @@ const TOOL_IMPLS = {
     const blockId = mcData.blocksByName[name]?.id
     if (blockId === undefined) {
       const guesses = suggestNames(mcData, name)
-      return `Unknown block: ${block_type}.${guesses.length ? ' Did you mean: ' + guesses.join(', ') + '?' : ''}`
+      return `Unknown block: ${block_type}.${guesses.length ? ' Similar names: ' + guesses.join(', ') + '.' : ''}`
     }
 
     const block = bot.findBlock({ matching: blockId, maxDistance: 32 })
@@ -194,18 +225,39 @@ const TOOL_IMPLS = {
     const tool = await ensureHarvestTool(bot, block)
     if (tool.error) return tool.error
 
+    // Name this block is expected to drop, so we report on the SPECIFIC drop that lands in
+    // the inventory rather than on whatever the bot happened to vacuum up (old ground litter
+    // like dirt from earlier mining gets picked up mid-action and must NOT be misattributed
+    // to this block).
+    const expectedDrop = blockDropIds(block).map(id => idToName(mcData, id)).filter(Boolean)[0] || name
+
+    // Report the VERIFIED result for THIS block's drop only: compare the expectedDrop's count
+    // before/after. The block can break yet collect nothing (drop not yet picked up), and the
+    // bot can incidentally pick up unrelated items — neither should be reported as this block's
+    // yield. The per-step observation inventory still shows total counts for everything else.
+    const report = (before, note) => {
+      const gained = (readInventory(bot)[expectedDrop] || 0) - (before[expectedDrop] || 0)
+      return gained > 0
+        ? `Broke ${name} at ${formatPos(block.position)}; collected ${gained}x ${expectedDrop}.${note}`
+        : `Broke ${name} at ${formatPos(block.position)}; drop (${expectedDrop}) not collected yet.${note}`
+    }
+
     try {
+      const before = readInventory(bot)
       await navigate(bot, new goals.GoalLookAtBlock(block.position, bot.world), block.position)
       await bot.dig(block)
       await collectNearbyDrops(bot, block.position)
-      return `Mined ${name} at ${formatPos(block.position)}${tool.note}`
+      await settleInventory(bot, before, expectedDrop)
+      return report(before, tool.note)
     } catch (e) {
       // Navigation may have stalled but left us within reach — try digging anyway.
       try {
         if (bot.entity.position.distanceTo(block.position) <= 5) {
+          const before = readInventory(bot)
           await bot.dig(block)
           await collectNearbyDrops(bot, block.position)
-          return `Mined ${name} at ${formatPos(block.position)}${tool.note} (recovered after getting stuck)`
+          await settleInventory(bot, before, expectedDrop)
+          return report(before, tool.note)
         }
       } catch (_) { /* fall through to the failure message */ }
       return `Failed to mine ${name}: ${e.message}`
@@ -232,7 +284,7 @@ const TOOL_IMPLS = {
     const itemData = mcData.itemsByName[name]
     if (!itemData) {
       const guesses = suggestNames(mcData, name)
-      return `Unknown item: ${item}.${guesses.length ? ' Did you mean: ' + guesses.join(', ') + '?' : ''}`
+      return `Unknown item: ${item}.${guesses.length ? ' Similar names: ' + guesses.join(', ') + '.' : ''}`
     }
 
     // 1) Craftable right now in the 2x2 inventory grid? (planks, sticks, the table itself)
@@ -246,15 +298,15 @@ const TOOL_IMPLS = {
         // ingredients" so the model fixes the RIGHT thing.
         const needsTable = bot.recipesAll(itemData.id, null, false).length === 0
         return needsTable
-          ? `Could not craft ${name}: needs a crafting_table — none within 32 blocks. Place one beside you first.`
-          : `Could not craft ${name}: not enough ingredients. Gather more first.`
+          ? `Could not craft ${name}: needs a crafting_table — none within 32 blocks.`
+          : `Could not craft ${name}: not enough ingredients.`
       }
       // A table IS nearby. If we still can't make it, the problem is INGREDIENTS, not the
       // table — say so explicitly (with the table's position) so the model stops looping on
       // "place another crafting_table" when one is already right next to it.
       recipe = bot.recipesFor(itemData.id, null, count, table)[0]
       if (!recipe) {
-        return `Could not craft ${name}: not enough ingredients — a crafting_table is already here at ${formatPos(table.position)}. Gather the missing materials first.`
+        return `Could not craft ${name}: not enough ingredients — a crafting_table is already here at ${formatPos(table.position)}.`
       }
       // Walk up to the table, then CONFIRM we're actually in interaction range before opening
       // its window. A short/failed path otherwise leaves us too far and bot.craft hangs the
@@ -262,18 +314,26 @@ const TOOL_IMPLS = {
       try { await navigate(bot, new goals.GoalLookAtBlock(table.position, bot.world), table.position) } catch (_) {}
       const dist = bot.entity.position.distanceTo(table.position)
       if (dist > 4) {
-        return `Could not craft ${name}: a crafting_table is at ${formatPos(table.position)} but I couldn't get close enough to use it (stuck ${dist.toFixed(1)} blocks away). Clear a path to it, or place a crafting_table right beside you.`
+        return `Could not craft ${name}: a crafting_table is at ${formatPos(table.position)} but I couldn't get close enough to use it (stuck ${dist.toFixed(1)} blocks away).`
       }
     }
 
     try {
+      const beforeCount = readInventory(bot)[name] || 0
       await bot.craft(recipe, count, table)
       // Crafting at a table leaves its window open, which makes the just-crafted item briefly
       // unfindable for equip/mine_block (the inventory looks right but item moves fail). Close
       // the window and wait for the result to settle into inventory before the next action.
       if (bot.currentWindow) { try { await bot.closeWindow(bot.currentWindow) } catch (_) {} }
-      for (let i = 0; i < 12 && !bot.inventory.items().some(it => it.name === name); i++) await sleep(50)
-      return `Crafted ${count}x ${name}`
+      // Crafting CONSUMES ingredients, so total inventory size can drop — verify success by the
+      // TARGET item's own count rising, not by total count or mere presence (the bot may have
+      // already owned some). Report what actually appeared instead of asserting it worked.
+      let afterCount = readInventory(bot)[name] || 0
+      for (let i = 0; i < 12 && afterCount <= beforeCount; i++) { await sleep(50); afterCount = readInventory(bot)[name] || 0 }
+      const gained = afterCount - beforeCount
+      return gained > 0
+        ? `Crafted ${gained}x ${name}.`
+        : `Craft of ${name} produced nothing; ${name} count unchanged.`
     } catch (e) {
       return `Failed to craft ${name}: ${e.message}`
     }
@@ -281,7 +341,13 @@ const TOOL_IMPLS = {
 
   async equip(bot, { item }) {
     const name = normalizeName(item)
-    const i = bot.inventory.items().find(x => x.name === name)
+    // A just-crafted item (especially crafted at a table) can be transiently invisible to
+    // bot.inventory.items() while the crafting window is still closing/settling. Close any
+    // open window, then poll briefly so we don't falsely report "No X in inventory" for an
+    // item the inventory actually holds.
+    if (bot.currentWindow) { try { await bot.closeWindow(bot.currentWindow) } catch (_) {} }
+    let i = bot.inventory.items().find(x => x.name === name)
+    for (let n = 0; n < 12 && !i; n++) { await sleep(50); i = bot.inventory.items().find(x => x.name === name) }
     if (!i) return `No ${name} in inventory.`
     try {
       await equipAndConfirm(bot, i)
@@ -433,7 +499,7 @@ async function ensureHarvestTool(bot, block) {
 
   const usable = bot.inventory.items().find(i => block.harvestTools[i.type])
   if (!usable) {
-    return { error: `Could not collect ${block.name}: it needs a proper tool (a pickaxe) equipped or it drops NOTHING. Craft and equip a pickaxe first, then mine.` }
+    return { error: `Could not collect ${block.name}: no equipped tool yields a drop (it would drop nothing).` }
   }
   try {
     await equipAndConfirm(bot, usable)
@@ -446,10 +512,14 @@ async function ensureHarvestTool(bot, block) {
 // bot.equip resolves when the server ACKs the inventory move, but the actual held-hand slot
 // can take an extra tick to update — so the NEXT action (e.g. mine_block) may run while the
 // hand still holds the OLD item (the "it only switched after mining" bug). Wait until the
-// hand actually holds the requested item (short bounded poll) before returning.
+// hand actually holds the requested item (short bounded poll). If it still hasn't switched,
+// throw so the caller reports an honest failure instead of a false "Equipped X".
 async function equipAndConfirm(bot, item) {
   await bot.equip(item, 'hand')
   for (let i = 0; i < 20 && bot.heldItem?.type !== item.type; i++) await sleep(25)
+  if (bot.heldItem?.type !== item.type) {
+    throw new Error(`hand still holds ${bot.heldItem?.name || 'nothing'}`)
+  }
 }
 
 // After breaking a block, its drop spawns near `pos` as an item entity. Walk onto it so the
@@ -601,7 +671,7 @@ async function placeOnSurface(bot, item, name, dx, dy, dz) {
       return `Placed ${name} on the ground beside you.`
     }
   }
-  return `Failed to place ${name}: no open spot next to you — move to flatter, clearer ground and retry.`
+  return `Failed to place ${name}: no open spot next to you.`
 }
 
 // Jump straight up and place a block under your feet at the apex (pillar up by 1).
@@ -625,7 +695,7 @@ async function pillarUp(bot, item, name) {
     bot.setControlState('jump', false)
     return placed
       ? `Pillared up: placed ${name} beneath you.`
-      : `Could not place ${name} beneath you — try again or move to clearer ground.`
+      : `Could not place ${name} beneath you.`
   } catch (e) {
     bot.setControlState('jump', false)
     return `Failed to pillar up with ${name}: ${e.message}`
