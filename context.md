@@ -85,6 +85,15 @@ automatic success check from a free-form goal. Resolves the model, runs the task
 trace, prints a scorecard, and saves the result. Thin glue — keep orchestration logic in the
 owning modules, not here.
 
+**Dual mode** (`--model-a X --model-b Y`): runs two bots on the *same* task, one per model, so
+two models can be compared. Each bot runs the **unchanged single-bot command** in its **own
+console window** (`cmd start … cmd /k`, windows stay open), differing only by the
+`MC_BOT_USERNAME` injected via the spawn environment (`MC_BOT_USERNAME_A`/`_B`, default
+`MineBenchBotA`/`B`). The bots share one world (a "race" — they may compete for blocks). The
+controller waits until both children have written their `results/*.json` (timeout
+`DUAL_WAIT_MS`), then prints `store.printComparison`. Comparison rendering lives in `store.js`,
+keeping this file thin.
+
 ### Harness / Runner — `harness/runner.js`
 The benchmark spine. `run({ task, model })` creates a mineflayer bot, waits for spawn, applies
 the task setup, then loops up to `max_steps`: `buildObservation → agent.act → executeAction →
@@ -177,6 +186,11 @@ efficiency-weighted formula rewards fewer steps/errors/repeats
 `<task>__<model>__<timestamp>.json` (`{ scorecard, trace }`) to `results/`.
 `loadResults(dir?)` reads them back; `comparisonTable(results)` reduces to
 `{ task_id, model, success, score, steps }` rows for cross-model comparison.
+`resultFilesForTask(taskId, sinceMs?, dir?)` lists this task's result files (optionally only
+those written at/after `sinceMs`), newest first — used by `bench.js` dual mode to wait for both
+child runs. `pickWinner(a, b)` ranks two scorecards (success → higher `score` → fewer `steps`;
+`null` on a tie), and `printComparison(cards, log?)` prints the two models side-by-side plus the
+winner.
 
 ### Tasks — `tasks/*.json`
 The benchmark content, authored purely as data (no engine code). Each task has a deterministic
@@ -193,7 +207,9 @@ connectivity/credentials.
 ## Configuration & scripts
 - **Env** (`.env`, see `.env.example`): `AZURE_OPENAI_*` (key/endpoint/deployment/api-version),
   `USE_ENTRA`, `AZURE_MIN_REQUEST_INTERVAL_MS`, `COPILOT_TOKEN`, `MC_SERVER_HOST/PORT`,
-  `MC_BOT_USERNAME`/`BOT_NAME`, `MAX_STEPS`. Loaded via `dotenv`.
+  `MC_BOT_USERNAME`/`BOT_NAME`, `MAX_STEPS`. Dual mode adds `MC_BOT_USERNAME_A`/`_B` (one bot
+  each; both must be op'd) and optional `DUAL_WAIT_MS` (controller wait before timeout). Loaded
+  via `dotenv`.
 - **Scripts** (`package.json`): `npm run bench` / `npm run agent` → `node bench.js`;
   `npm run smoke` → `node bot/bot.js`.
 - **Server prerequisites**: the bot must be **OP** for `harness/env.js` setup to apply, and the
