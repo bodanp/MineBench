@@ -89,7 +89,7 @@
       h('th', { class: 'num', text: 'Runs' }),
       h('th', { class: 'num', text: 'Success' }),
       h('th', { class: 'num', text: 'Avg score' }),
-      h('th', { class: 'num', text: 'Avg steps' })
+      h('th', { class: 'num', text: 'Avg progress' })
     )));
     const tbody = h('tbody');
     for (const r of rows) {
@@ -101,8 +101,41 @@
           h('div', { class: 'bar' }, h('span', { style: `width:${Math.round((r.success_rate || 0) * 100)}%` }))
         ),
         h('td', { class: 'num', text: score3(r.avg_score) }),
-        h('td', { class: 'num', text: String(r.avg_steps) })
+        h('td', { class: 'num', text: score3(r.avg_progress) })
       ));
+    }
+    table.appendChild(tbody);
+  }
+
+  // ---- capability profile (model × dimension) --------------------------------
+  const CAP_KEYS = ['completion', 'planning', 'tool_use', 'adaptation', 'robustness', 'efficiency'];
+  const capLabel = (k) => (DATA.capability_labels && DATA.capability_labels[k]) || k;
+  const capVal = (v) => (v == null ? '—' : (Number(v) || 0).toFixed(2));
+
+  function renderCapabilities() {
+    const rows = DATA.leaderboard || [];
+    const table = $('#capabilities');
+    if (!table) return;
+    table.innerHTML = '';
+    table.appendChild(h('thead', null, h('tr', null,
+      h('th', { text: 'Model' }),
+      ...CAP_KEYS.map(k => h('th', { class: 'num', text: capLabel(k) }))
+    )));
+    // Best (max) value per column, to highlight where each model leads.
+    const best = {};
+    for (const k of CAP_KEYS) {
+      const vals = rows.map(r => r.capabilities && r.capabilities[k]).filter(v => v != null);
+      best[k] = vals.length ? Math.max(...vals) : null;
+    }
+    const tbody = h('tbody');
+    for (const r of rows) {
+      const tr = h('tr', null, h('td', { class: 'model-cell', text: r.model }));
+      for (const k of CAP_KEYS) {
+        const v = r.capabilities && r.capabilities[k];
+        const isBest = v != null && best[k] != null && Math.abs(v - best[k]) < 1e-9;
+        tr.appendChild(h('td', { class: 'num' + (isBest ? ' cap-best' : ''), text: capVal(v) }));
+      }
+      tbody.appendChild(tr);
     }
     table.appendChild(tbody);
   }
@@ -143,8 +176,8 @@
     { key: 'model', label: 'Model' },
     { key: 'success', label: 'Result', num: true },
     { key: 'score', label: 'Score', num: true },
+    { key: 'progress', label: 'Progress', num: true },
     { key: 'steps', label: 'Steps', num: true },
-    { key: 'duration_s', label: 'Duration', num: true },
     { key: 'tool_errors', label: 'Errors', num: true },
     { key: 'ended_reason', label: 'Ended' },
     { key: 'started_at', label: 'Started', num: true }
@@ -190,8 +223,8 @@
         h('td', { class: 'model-cell', text: r.model }),
         h('td', { class: 'num' }, h('span', { class: 'badge ' + (r.success ? 'ok' : 'err'), text: r.success ? 'success' : 'fail' })),
         h('td', { class: 'num', text: score3(r.score) }),
+        h('td', { class: 'num', text: r.progress == null ? '—' : score3(r.progress) }),
         h('td', { class: 'num', text: String(r.steps) }),
-        h('td', { class: 'num', text: fmtDur(r.duration_s) }),
         h('td', { class: 'num', text: r.tool_errors == null ? '—' : String(r.tool_errors) }),
         h('td', { text: r.ended_reason || '—' }),
         h('td', { class: 'num', text: fmtDate(r.started_at) })
@@ -218,16 +251,40 @@
     const summary = [
       ['Result', run.success ? 'success' : 'fail'],
       ['Score', score3(run.score)],
+      ['Progress', run.progress == null ? '—' : score3(run.progress)],
       ['Steps', String(run.steps)],
-      ['Duration', fmtDur(run.duration_s)],
-      ['Tool errors', run.tool_errors == null ? '—' : String(run.tool_errors)],
-      ['Repeats', run.repeated_actions == null ? '—' : String(run.repeated_actions)],
+      ['Agent errors', (run.diagnostics && run.diagnostics.agent_errors != null) ? String(run.diagnostics.agent_errors) : '—'],
+      ['Env errors', (run.diagnostics && run.diagnostics.env_errors != null) ? String(run.diagnostics.env_errors) : '—'],
+      ['Loops', run.repeated_actions == null ? '—' : String(run.repeated_actions)],
+      ['Duration (info)', fmtDur(run.duration_s)],
       ['Ended', run.ended_reason || '—']
     ];
     body.appendChild(h('div', { class: 'summary-grid' },
       ...summary.map(([k, v]) => h('div', { class: 'item' },
         h('div', { class: 'k', text: k }), h('div', { class: 'v', text: v })))
     ));
+
+    // Capability profile for this run.
+    if (run.capabilities) {
+      body.appendChild(h('div', { class: 'k', text: 'Capability profile', style: 'color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-top:14px;' }));
+      const wrap = h('div', { class: 'cap-bars' });
+      for (const k of CAP_KEYS) {
+        const v = run.capabilities[k];
+        wrap.appendChild(h('div', { class: 'cap-row' },
+          h('div', { class: 'cap-name', text: capLabel(k) }),
+          h('div', { class: 'cap-track' }, h('span', { class: 'cap-fill', style: `width:${v == null ? 0 : Math.round(v * 100)}%` })),
+          h('div', { class: 'cap-val', text: capVal(v) })
+        ));
+      }
+      body.appendChild(wrap);
+    }
+
+    // Milestones reached (partial-credit breakdown).
+    if (run.milestones && Array.isArray(run.milestones.list) && run.milestones.list.length) {
+      body.appendChild(h('div', { class: 'k', text: `Milestones (${run.milestones.reached}/${run.milestones.total})`, style: 'color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-top:14px;' }));
+      body.appendChild(h('div', { class: 'inv-chips' },
+        ...run.milestones.list.map(m => h('span', { class: 'inv-chip ' + (m.reached ? 'ms-done' : 'ms-todo'), text: `${m.reached ? '✓' : '○'} ${m.label}` }))));
+    }
 
     if (run.final_inventory && Object.keys(run.final_inventory).length) {
       body.appendChild(h('div', { class: 'k', text: 'Final inventory', style: 'color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;' }));
@@ -281,6 +338,7 @@
     if (!DATA.runs || DATA.runs.length === 0) { showEmpty(); return; }
     renderOverview();
     renderLeaderboard();
+    renderCapabilities();
     renderMatrix();
     renderRuns();
     wireModal();

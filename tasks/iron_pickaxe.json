@@ -12,5 +12,18 @@
     "give": [],
     "clear_inventory": true
   },
-  "success": { "inventory": { "iron_pickaxe": 1 } }
+  "success": { "inventory": { "iron_pickaxe": 1 } },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "cobblestone", "any": ["cobblestone", "cobbled_deepslate"], "count": 3, "label": "Mine stone", "deps": ["wooden_pickaxe"] },
+    { "id": "stone_pickaxe", "item": "stone_pickaxe", "label": "Craft stone pickaxe", "deps": ["stick", "cobblestone", "crafting_table"] },
+    { "id": "furnace", "item": "furnace", "label": "Make furnace", "deps": ["cobblestone", "crafting_table"] },
+    { "id": "raw_iron", "any": ["raw_iron", "iron_ore"], "label": "Mine iron ore", "deps": ["stone_pickaxe"] },
+    { "id": "iron_ingot", "item": "iron_ingot", "label": "Smelt iron", "deps": ["raw_iron", "furnace"] },
+    { "id": "iron_pickaxe", "item": "iron_pickaxe", "label": "Craft iron pickaxe", "deps": ["stick", "iron_ingot", "crafting_table"] }
+  ]
 }
