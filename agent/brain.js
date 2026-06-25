@@ -31,7 +31,7 @@ Available tools:
 - smelt(input, fuel, count): smelt items in the nearest furnace using the fuel you name; waits, collects the output, and reports what actually came out
 - equip(item): hold an item (equip a pickaxe before mining stone/ore)
 - turn(direction), jump(), chat(message)
-- stop(): end the task. Call ONLY when the goal is fully complete, OR you have tried several genuinely DIFFERENT approaches to the same blocker and every one has failed. A single failed or surprising step is NOT a reason to stop.
+- stop(): end the task. Call ONLY when the goal is fully complete. KEEP FUCKING TRYING. NEVER BACK DOWN NEVER GIVE UP.
 
 Each observation is your senses — READ it before acting:
 - "position" + "facing": where you are and which way you're looking.
