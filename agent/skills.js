@@ -107,7 +107,7 @@ const TOOL_SCHEMAS = [
       parameters: {
         type: 'object',
         properties: {
-          block_type: { type: 'string', description: 'e.g., "oak_log", "stone", "dirt", "coal_ore"' },
+          block_type: { type: 'string', description: 'The block type to mine (lowercase underscored name)' },
           x: { type: 'integer', description: 'Optional. Exact X of the specific block to mine (e.g. from look_around block_coords). Provide all of x, y, z together to target one block.' },
           y: { type: 'integer', description: 'Optional. Exact Y of the specific block to mine. Provide all of x, y, z together.' },
           z: { type: 'integer', description: 'Optional. Exact Z of the specific block to mine. Provide all of x, y, z together.' }
@@ -141,7 +141,7 @@ const TOOL_SCHEMAS = [
       parameters: {
         type: 'object',
         properties: {
-          item: { type: 'string', description: 'e.g., "oak_planks", "stick", "crafting_table", "wooden_pickaxe"' },
+          item: { type: 'string', description: 'The item to craft (lowercase underscored name)' },
           count: { type: 'integer', default: 1 }
         },
         required: ['item']
@@ -156,8 +156,8 @@ const TOOL_SCHEMAS = [
       parameters: {
         type: 'object',
         properties: {
-          input: { type: 'string', description: 'Item to smelt, e.g. "raw_iron", "sand", "raw_copper", "potato".' },
-          fuel: { type: 'string', description: 'Fuel item to burn, e.g. "coal", "charcoal", "oak_planks".' },
+          input: { type: 'string', description: 'Item to smelt (lowercase underscored name).' },
+          fuel: { type: 'string', description: 'Fuel item to burn (lowercase underscored name).' },
           count: { type: 'integer', description: 'How many input items to smelt. Default 1.', default: 1 }
         },
         required: ['input', 'fuel']
@@ -171,7 +171,7 @@ const TOOL_SCHEMAS = [
       description: 'Equip an item from inventory to your hand (e.g. a pickaxe before mining stone/ore).',
       parameters: {
         type: 'object',
-        properties: { item: { type: 'string', description: 'e.g., "wooden_pickaxe"' } },
+        properties: { item: { type: 'string', description: 'The item to equip (lowercase underscored name)' } },
         required: ['item']
       }
     }
@@ -197,7 +197,7 @@ const TOOL_SCHEMAS = [
       parameters: {
         type: 'object',
         properties: {
-          target: { type: 'string', description: 'Item or block name to look up, e.g. "stone_pickaxe", "oak_planks", "iron_ore". Lowercase underscored names work best; "minecraft:" prefix and spaces are tolerated.' }
+          target: { type: 'string', description: 'Item or block name to look up. Lowercase underscored names work best; "minecraft:" prefix and spaces are tolerated.' }
         },
         required: ['target']
       }
@@ -231,7 +231,7 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'stop',
-      description: 'End the task. Call when goal is complete OR truly stuck.',
+      description: 'End the task. Call ONLY when the goal is complete, OR you have genuinely exhausted your options after trying several different approaches. A single failed step is not "stuck".',
       parameters: { type: 'object', properties: {} }
     }
   }
@@ -608,7 +608,7 @@ const TOOL_IMPLS = {
 
   async read_data(bot, { target }) {
     if (!target || typeof target !== 'string') {
-      return 'No target given. Call read_data with an item/block name, e.g. read_data({ target: "stone_pickaxe" }).'
+      return 'No target given. Call read_data with an item/block name, e.g. read_data({ target: "<item_name>" }).'
     }
     let mcData
     try {
