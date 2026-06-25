@@ -20,20 +20,30 @@ payload — spend real time there.
 
 ---
 
-## 1. Intro — how we grade AI today, and what we don't (~45s)
+## 1. Intro — the hook + the gap (~45s)
 
-> **[Open on leaderboards / benchmark logos: MMLU, HellaSwag, a safety scorecard.]**
-> "Here's how we judge AI today. Every leaderboard you've seen grades one thing: the **text**
-> a model produces. Is the answer correct? Is it safe? Is it relevant? Does it sound human?
-> Those are **lexical** tests — they score the *words that come out*. And we've gotten so good
-> at them that frontier models now **beat human experts** on the flagship exam, MMLU.
+> **[Cold open: 2016 Project Malmo footage / screenshot → hard cut to our agent in Minecraft today.]**
+> "Ten years ago, Microsoft put AI *inside* Minecraft to teach it how to learn. Today, we're
+> putting AI back in Minecraft — not to teach it, but to **judge** it. Because we still can't
+> answer the simplest question about every model we ship: **which one actually reasons better?**
+>
+> **[To camera / explainer — leaderboard logos: MMLU, HellaSwag, a safety scorecard.]**
+> Here's why we can't answer it. We grade AI on how well it **talks** — never on how well it
+> **thinks.** Every leaderboard you've seen measures the **text** a model produces: is it
+> correct, is it safe, is it relevant, does it sound human? Those are **lexical** tests, and
+> we've gotten so good at them that frontier models now **beat human experts** on the flagship
+> exam, MMLU.
 >
 > **[Cut to a model confidently failing a simple multi-step task.]**
 > But ask that same model to actually *do* something — to plan, act, and adapt in a world that
-> pushes back — and it falls apart. On GAIA, a benchmark of conceptually *simple* real-world
+> pushes back — and it crumbles. On GAIA, a benchmark of conceptually *simple* real-world
 > tasks, GPT-4 scored **15%**. Humans scored **92%**. There is **no standard** that grades a
 > model's **reasoning** — its ability to plan and act inside a system with rules, state, and
-> consequences. That blind spot is what **MineBench** measures."
+> consequences.
+>
+> **[Transition → MineBench title card.]**
+> That blind spot is what **MineBench** measures. We don't ask the model questions — we drop it
+> into a world, hand it a goal, and watch it *think.*"
 
 *Key facts (paraphrase, don't read URLs aloud — see Appendix A): MMLU/HELM are static,
 text-only; Gemini was first to hit human-expert MMLU; GAIA = 15% vs 92%; benchmark
@@ -45,13 +55,12 @@ short."*
 ## 2. Standing on Microsoft's own research (~20s)
 
 > **[Project Malmo screenshot → our agent in Minecraft.]**
-> "And we're not starting from zero — we're **modernizing Microsoft's own research.** A decade
-> ago **Microsoft Research built Project Malmo on top of Minecraft** to study AI, training
-> agents with **reinforcement learning** — millions of episodes and a hand-tuned reward for
-> every task. MineBench takes that same insight — *Minecraft is a serious testbed for
-> intelligence* — and brings it into the **LLM era**: no training, no reward shaping. You hand
-> the model the world in plain language and watch it *reason*. Same arena Microsoft pioneered,
-> a fundamentally new kind of mind being tested in it."
+> "That original project has a name: **Project Malmo** — Microsoft Research's platform that put
+> AI agents inside Minecraft and trained them with **reinforcement learning**: millions of
+> episodes and a hand-tuned reward for every task. MineBench takes that same insight — *Minecraft
+> is a serious testbed for intelligence* — and modernizes it for the **LLM era**: no training,
+> no reward shaping. You hand the model the world in plain language and watch it *reason*. Same
+> arena Microsoft pioneered, a fundamentally new kind of mind being tested in it."
 
 ---
 
@@ -157,7 +166,7 @@ The money shot. Same task, same world, two brains — **watch them think, read t
 
 | Time | Beat | Screen | You do / say |
 |------|------|--------|--------------|
-| 0:00 | The eval gap | Benchmark logos → a simple-task failure | §1 — lexical tests vs. reasoning; GAIA 15% vs 92%. |
+| 0:00 | Hook + the gap | Malmo (2016) → our agent → benchmark logos → a task failure | §1 — full-circle hook ("teach it → judge it"); lexical vs. reasoning; GAIA 15% vs 92%. |
 | 0:45 | Modernizing MS research | Malmo → our agent | §2 — Malmo + RL, now LLMs (2 sentences). |
 | 1:05 | Set the stage | Dashboard idle + game | "Craft a gold ingot: place furnace, pick fuel, smelt." |
 | 1:20 | **Model A live** | Dashboard + game | `--task gold_ingot --model copilot/gpt-5.4 --verbose`. |
