@@ -42,14 +42,16 @@ short."*
 
 ---
 
-## 2. The old idea, brought back (~20s)
+## 2. Standing on Microsoft's own research (~20s)
 
 > **[Project Malmo screenshot → our agent in Minecraft.]**
-> "This isn't a new idea — it's an old one, revived. A decade ago **Microsoft Research built
-> Project Malmo on top of Minecraft** to study AI, training agents with **reinforcement
-> learning** — millions of episodes and a hand-tuned reward for every task. We're bringing
-> that same arena back for the **LLM era**: no training, no reward shaping — you hand the model
-> the world in plain language and watch it *reason* its way through."
+> "And we're not starting from zero — we're **modernizing Microsoft's own research.** A decade
+> ago **Microsoft Research built Project Malmo on top of Minecraft** to study AI, training
+> agents with **reinforcement learning** — millions of episodes and a hand-tuned reward for
+> every task. MineBench takes that same insight — *Minecraft is a serious testbed for
+> intelligence* — and brings it into the **LLM era**: no training, no reward shaping. You hand
+> the model the world in plain language and watch it *reason*. Same arena Microsoft pioneered,
+> a fundamentally new kind of mind being tested in it."
 
 ---
 
@@ -156,7 +158,7 @@ The money shot. Same task, same world, two brains — **watch them think, read t
 | Time | Beat | Screen | You do / say |
 |------|------|--------|--------------|
 | 0:00 | The eval gap | Benchmark logos → a simple-task failure | §1 — lexical tests vs. reasoning; GAIA 15% vs 92%. |
-| 0:45 | Old idea, revived | Malmo → our agent | §2 — Malmo + RL, now LLMs (2 sentences). |
+| 0:45 | Modernizing MS research | Malmo → our agent | §2 — Malmo + RL, now LLMs (2 sentences). |
 | 1:05 | Set the stage | Dashboard idle + game | "Craft a gold ingot: place furnace, pick fuel, smelt." |
 | 1:20 | **Model A live** | Dashboard + game | `--task gold_ingot --model copilot/gpt-5.4 --verbose`. |
 | 2:05 | **Model B live** | Dashboard + game | Same task, `copilot/gpt-4o` — contrast the Thought column. |
