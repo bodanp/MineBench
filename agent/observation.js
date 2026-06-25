@@ -92,6 +92,22 @@ function nearestResources(bot) {
   return best
 }
 
+// Other PLAYERS the bot can currently see (e.g. an opposing bot in a duel). Reported every
+// step with username + live coordinates + direction/distance so the model can keep tracking a
+// moving target without spamming look_around. Item-drops and the bot itself are excluded.
+function nearbyPlayers(bot) {
+  const p = bot.entity.position
+  return Object.values(bot.entities)
+    .filter(e => e !== bot.entity && e.type === 'player' && e.username && e.username !== bot.username && e.position)
+    .map(e => ({
+      username: e.username,
+      dist: +p.distanceTo(e.position).toFixed(1),
+      dir: compass(e.position.x - p.x, e.position.z - p.z),
+      at: { x: Math.round(e.position.x), y: Math.round(e.position.y), z: Math.round(e.position.z) }
+    }))
+    .sort((a, b) => a.dist - b.dist)
+}
+
 function readInventory(bot) {
   const inv = {}
   if (!bot || !bot.inventory) return inv
@@ -110,6 +126,7 @@ function buildObservation(bot) {
     inventory: readInventory(bot),
     surroundings: describeSurroundings(bot),
     nearby: nearestResources(bot),
+    nearby_players: nearbyPlayers(bot),
     time_of_day: bot.time.timeOfDay
   }
 }

@@ -1,0 +1,18 @@
+{
+  "id": "obtain_mutton",
+  "title": "Obtain raw mutton",
+  "goal": "Obtain at least 1 mutton by killing a sheep.",
+  "difficulty": 1,
+  "max_steps": 40,
+  "rationale": "PvP smoke test: locate a sheep and kill it with attack_entity to collect mutton. Tests entity tracking + combat + drop collection.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true,
+    "summon": [{ "entity": "sheep", "count": 2, "offset": [2, 0, 2] }]
+  },
+  "success": { "inventory": { "mutton": 1 } }
+}

@@ -82,6 +82,16 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
 
   const bot = createBot()
 
+  // Harness-owned kill tracking: record the username of any PLAYER that actually dies (the
+  // server's entityDead packet), so a "killed_player" task can be scored from real world state
+  // rather than the model's claim. A Set de-dupes repeated death packets.
+  const killedPlayers = new Set()
+  bot.on('entityDead', (e) => {
+    if (e && e.type === 'player' && e.username && e.username !== bot.username) {
+      killedPlayers.add(e.username)
+    }
+  })
+
   // Surface the common anti-cheat movement kick with the fix.
   bot.on('kicked', (reason) => {
     const text = typeof reason === 'string' ? reason : JSON.stringify(reason)
@@ -154,12 +164,12 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
       emit({ type: 'step', i: step + 1, max_steps: maxSteps, thought: decision.thought, action: { tool: decision.tool, args: decision.args }, result, ok, pos, inventory: readInventory(bot) })
 
       // Harness-owned success detection (don't trust the model's stop()).
-      if (checkSuccess({ inventory: readInventory(bot) }, task)) { endReason = 'success'; break }
+      if (checkSuccess({ inventory: readInventory(bot), killed_players: [...killedPlayers] }, task)) { endReason = 'success'; break }
       if (done) { endReason = 'agent_stop'; break }
     }
 
     trace.ended_reason = endReason
-    trace.final_state = { inventory: readInventory(bot) }
+    trace.final_state = { inventory: readInventory(bot), killed_players: [...killedPlayers] }
     emit({ type: 'run_end', ended_reason: endReason, duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
   } catch (e) {
     log('Run error:', e.message)

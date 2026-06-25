@@ -193,6 +193,20 @@ const TOOL_SCHEMAS = [
   {
     type: 'function',
     function: {
+      name: 'attack_player',
+      description: 'Attack and kill another PLAYER (e.g. an opposing bot named "MineBenchBotB") by their exact username. Uses the same combat as attack_entity: walks to that player, auto-equips your best weapon (sword/axe) if you have one, and swings until they die. Use this only when your goal explicitly tells you to kill a named player — never the human or yourself.',
+      parameters: {
+        type: 'object',
+        properties: {
+          username: { type: 'string', description: 'The exact username of the player to attack (e.g. "MineBenchBotB").' }
+        },
+        required: ['username']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'look_around',
       description: 'Scan surroundings: returns nearby blocks and entities within a cube of the given radius (default 8 blocks). Returns "nearby_blocks" (total counts per block type — how abundant each is) AND "block_coords" (up to the 3 NEAREST [x,y,z] coordinates per block type, sorted closest-first). Every coordinate in "block_coords" is guaranteed to be that exact block type, so pick the first (closest) one and move_to(x,y,z) or mine_block(block_type, x, y, z) it directly. If a first scan does not reveal what you need, call it again with a LARGER radius to search farther out.',
       parameters: {
@@ -592,6 +606,28 @@ const TOOL_IMPLS = {
       : `Killed ${name} but no drops were collected (they may have despawned or fallen out of reach).${weaponNote}`
   },
 
+  async attack_player(bot, { username }) {
+    if (!username || typeof username !== 'string') {
+      return 'No username given. Call attack_player with the exact username of the player to attack.'
+    }
+    if (username === bot.username) return 'Refusing to attack yourself.'
+
+    // Resolve the player's live entity. bot.players is keyed by username; .entity is only set
+    // while they are in render range. Fall back to scanning entities for a matching player.
+    const target = bot.players[username]?.entity
+      || Object.values(bot.entities).find(e => e.type === 'player' && e.username === username)
+    if (!target || !target.isValid) {
+      return `Player ${username} is not currently visible. Check "nearby_players" in your observation (or call look_around) for their coordinates, move_to them, then try again.`
+    }
+
+    // Same combat path as attack_entity: hold the best weapon, then chase + swing until dead.
+    const weaponNote = await equipBestWeapon(bot)
+    const result = await attackUntilDead(bot, target)
+    return result.killed
+      ? `Killed ${username}.${weaponNote}`
+      : `Could not kill ${username}: ${result.reason}. Move_to closer and try again.`
+  },
+
   async look_around(bot, { radius } = {}) {
     const nearbyBlocks = {}
     // Per-block-name list of world coordinates the model can pick from to move_to/mine a
@@ -633,11 +669,26 @@ const TOOL_IMPLS = {
       blockCoords[name] = list.slice(0, MAX_COORDS_PER_TYPE).map(e => e.xyz)
     }
 
-    // Exclude the bot itself AND other players (including the human) — players are not
-    // resources or navigation targets, and surfacing them makes the model chase them.
+    // Mobs/animals around the bot (NOT players — those go in a separate "players" list below).
+    // Item-drops are skipped: they're auto-collected, not navigation targets.
     const entities = Object.values(bot.entities)
-      .filter(e => e !== bot.entity && e.type !== 'player' && e.position && bot.entity.position.distanceTo(e.position) < 16)
+      .filter(e => e !== bot.entity && e.type !== 'player' && e.name !== 'item'
+        && e.position && bot.entity.position.distanceTo(e.position) < 16)
       .map(e => ({ type: e.name || e.kind || e.type, dist: +bot.entity.position.distanceTo(e.position).toFixed(1) }))
+
+    // OTHER PLAYERS (e.g. an opposing bot in a duel). These ARE valid navigation/attack
+    // targets, so unlike mobs we report them with their exact "username" AND live coordinates
+    // ("at") and we do NOT apply the 16-block cap — a player who wandered off must still be
+    // findable so the model can move_to them and then attack_player(username). The bot itself
+    // is excluded. Closest-first.
+    const players = Object.values(bot.entities)
+      .filter(e => e !== bot.entity && e.type === 'player' && e.username && e.username !== bot.username && e.position)
+      .map(e => ({
+        username: e.username,
+        dist: +bot.entity.position.distanceTo(e.position).toFixed(1),
+        at: { x: Math.round(e.position.x), y: Math.round(e.position.y), z: Math.round(e.position.z) }
+      }))
+      .sort((a, b) => a.dist - b.dist)
 
     // "nearby_blocks" = total counts of every block type around you (abundance). "block_coords"
     // = up to the 3 NEAREST coordinates per type, sorted closest-first, each guaranteed to be
@@ -647,7 +698,8 @@ const TOOL_IMPLS = {
       coords_are: 'nearest blocks per type, sorted closest-first (up to 3 each)',
       nearby_blocks: nearbyBlocks,
       block_coords: blockCoords,
-      entities
+      entities,
+      players
     })
   },
 
@@ -853,39 +905,58 @@ function materialRank(n) {
 
 // Chase a single entity into melee range and swing until it dies (or we time out / lose it).
 // Returns { killed: true, pos } with the death location for drop collection, or
-// { killed: false, reason } when we can't close the gap before the time cap.
+// { killed: false, reason } when the mob survives past the time cap.
+//
+// Tracking a MOVING mob is the hard part: pathing to a one-off snapshot of its position
+// (GoalNear with fixed x/y/z) sends the bot to where the mob WAS, so a wandering/fleeing
+// target is constantly just out of reach. Instead we hand pathfinder a DYNAMIC GoalFollow,
+// which keeps re-computing the route toward the mob's live position for the whole fight —
+// the bot stays glued to the target instead of giving up after a single stale approach.
 async function attackUntilDead(bot, target) {
   const REACH = 3.5
   const deadline = Date.now() + 30000
+  const targetId = target.id
   let lastPos = target.position.clone()
-  while (target.isValid && Date.now() < deadline) {
-    lastPos = target.position.clone()
-    const dist = bot.entity.position.distanceTo(target.position)
-    if (dist > REACH) {
-      // Walk toward where the mob currently is. A short per-leg cap keeps us re-pathing as it
-      // wanders instead of committing to one stale path for the full timeout.
-      try {
-        await navigate(bot, new goals.GoalNear(target.position.x, target.position.y, target.position.z, 2), target.position)
-      } catch (_) { /* it moved or we stalled — re-evaluate and try again */ }
-      if (!target.isValid) break
-      if (bot.entity.position.distanceTo(target.position) > REACH + 2) {
-        // Still can't get near it after a path attempt; nudge forward once before giving up.
-        try { await faceXZ(bot, target.position) } catch (_) {}
-        await walkForwardHopping(bot, 800)
-        if (bot.entity.position.distanceTo(target.position) > REACH + 2) {
-          return { killed: false, reason: 'could not get within melee range' }
-        }
+
+  // The server sends an entity-status "dead" packet (mineflayer 'entityDead') the moment an
+  // entity actually dies. For PLAYERS this is the only trustworthy kill signal: a player going
+  // out of render range also flips entity.isValid to false, so isValid alone can't tell "dead"
+  // from "ran away". We latch this flag and treat it as the authoritative death for the result.
+  let died = false
+  const onDead = (e) => { if (e && e.id === targetId) died = true }
+  bot.on('entityDead', onDead)
+
+  bot.pathfinder.setMovements(getMovements(bot))
+  // `true` = dynamic goal: pathfinder recalculates as the entity moves, continuously pursuing
+  // a target that walks/runs around rather than locking onto one stale coordinate.
+  try { bot.pathfinder.setGoal(new goals.GoalFollow(target, 2), true) } catch (_) {}
+
+  try {
+    while (!died && target.isValid && Date.now() < deadline) {
+      lastPos = target.position.clone()
+      if (bot.entity.position.distanceTo(target.position) <= REACH) {
+        // In range: face it and swing, paced to the ~0.6s attack cooldown so each hit lands
+        // at full damage. GoalFollow keeps us in range while we trade blows.
+        try { await bot.lookAt(target.position.offset(0, target.height ? target.height * 0.5 : 0.5, 0), true) } catch (_) {}
+        try { bot.attack(target) } catch (_) {}
+        await sleep(620)
+      } else {
+        // Out of reach: let the dynamic GoalFollow keep closing the gap; just poll until we
+        // are back in melee range (or the target dies / we time out).
+        await sleep(150)
       }
-      continue
     }
-    // In range: face it and swing. Pace swings to the ~0.6s attack cooldown so each hit
-    // lands at full damage instead of being throttled by the server.
-    try { await bot.lookAt(target.position.offset(0, target.height ? target.height * 0.5 : 0.5, 0), true) } catch (_) {}
-    try { bot.attack(target) } catch (_) {}
-    await sleep(620)
+  } finally {
+    bot.removeListener('entityDead', onDead)
+    // Always release pathfinder control so the next action starts from a clean state.
+    try { bot.pathfinder.setGoal(null) } catch (_) {}
+    try { bot.clearControlStates() } catch (_) {}
   }
-  if (!target.isValid) return { killed: true, pos: lastPos }
-  return { killed: false, reason: 'ran out of time' }
+
+  // A confirmed death packet is definitive. For mobs in the arena, isValid going false also
+  // reliably means dead (they don't roam out of range), so we keep accepting that too.
+  if (died || !target.isValid) return { killed: true, pos: lastPos }
+  return { killed: false, reason: 'the target kept its distance for too long' }
 }
 
 

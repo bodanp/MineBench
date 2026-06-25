@@ -28,6 +28,17 @@ async function applyTaskSetup(bot, task, log = () => {}) {
   }
   if (s.clear_inventory !== false) cmds.push(`/clear ${bot.username}`)
   for (const g of (s.give || [])) cmds.push(`/give ${bot.username} ${g.item} ${g.count || 1}`)
+  // Summon mobs the task needs (e.g. a cow for beef, a sheep for wool) at an offset from the
+  // bot, so PvP/attack tasks have a deterministic target instead of waiting on natural spawns.
+  // Coordinates are relative (~) to the bot's post-teleport position; each extra copy is nudged
+  // one block over so they don't stack on a single spot.
+  for (const m of (s.summon || [])) {
+    const [dx, dy, dz] = m.offset || [2, 0, 2]
+    const entity = m.entity.includes(':') ? m.entity : `minecraft:${m.entity}`
+    for (let i = 0; i < (m.count || 1); i++) {
+      cmds.push(`/summon ${entity} ~${dx + i} ~${dy} ~${dz}`)
+    }
+  }
 
   for (const c of cmds) {
     bot.chat(c)

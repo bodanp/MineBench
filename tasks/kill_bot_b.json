@@ -1,0 +1,16 @@
+{
+  "id": "kill_bot_b",
+  "title": "Kill MineBenchBotB",
+  "goal": "Kill the player named MineBenchBotB.",
+  "difficulty": 2,
+  "max_steps": 50,
+  "rationale": "PvP-vs-player test: locate the opposing bot by username and kill it with attack_player. No weapon is given — the bot must hand-fight or reason its way to a better weapon. Success is detected from the server's real death event, not the model's claim. Run this on the bot whose username is NOT MineBenchBotB (e.g. MineBenchBotA).",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "clear_inventory": true
+  },
+  "success": { "killed_player": "MineBenchBotB" }
+}
