@@ -1,0 +1,21 @@
+{
+  "id": "gold_ingot",
+  "title": "Smelt a gold ingot",
+  "goal": "Make a gold_ingot. You start with raw_gold, coal, and a furnace in your inventory — place the furnace and smelt the raw gold into a gold ingot.",
+  "difficulty": 2,
+  "max_steps": 40,
+  "rationale": "Mid-horizon smelting: place a furnace, pick the right fuel, smelt raw_gold -> gold_ingot. Isolates resource/furnace reasoning and fuel selection without long-horizon mining luck — short and reliable enough to run live while still exposing how two models plan.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [
+      { "item": "raw_gold", "count": 3 },
+      { "item": "coal", "count": 5 },
+      { "item": "furnace", "count": 1 }
+    ],
+    "clear_inventory": true
+  },
+  "success": { "inventory": { "gold_ingot": 1 } }
+}

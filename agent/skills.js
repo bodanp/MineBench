@@ -12,6 +12,7 @@
 // returns a human-readable string; strings that start like an error are scored as failures.
 // ─────────────────────────────────────────────
 const { goals, Movements } = require('mineflayer-pathfinder')
+const Vec3 = require('vec3')
 const { readInventory } = require('./observation')
 
 const STOP_SIGNAL = '__STOP__'
@@ -102,10 +103,15 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'mine_block',
-      description: 'Find and mine the nearest block of a given type within 32 blocks.',
+      description: 'Mine a block of a given type. By default it finds and mines the NEAREST matching block within 32 blocks. You can also target a SPECIFIC block by passing its exact x, y, z — use this to mine a precise coordinate you read from look_around\'s "block_coords" (e.g. the one ore/stone you actually want) instead of letting it pick the nearest. When x, y, z are given they must match the "block_type"; otherwise it falls back to the nearest matching block.',
       parameters: {
         type: 'object',
-        properties: { block_type: { type: 'string', description: 'e.g., "oak_log", "stone", "dirt", "coal_ore"' } },
+        properties: {
+          block_type: { type: 'string', description: 'The block type to mine (lowercase underscored name)' },
+          x: { type: 'integer', description: 'Optional. Exact X of the specific block to mine (e.g. from look_around block_coords). Provide all of x, y, z together to target one block.' },
+          y: { type: 'integer', description: 'Optional. Exact Y of the specific block to mine. Provide all of x, y, z together.' },
+          z: { type: 'integer', description: 'Optional. Exact Z of the specific block to mine. Provide all of x, y, z together.' }
+        },
         required: ['block_type']
       }
     }
@@ -135,7 +141,7 @@ const TOOL_SCHEMAS = [
       parameters: {
         type: 'object',
         properties: {
-          item: { type: 'string', description: 'e.g., "oak_planks", "stick", "crafting_table", "wooden_pickaxe"' },
+          item: { type: 'string', description: 'The item to craft (lowercase underscored name)' },
           count: { type: 'integer', default: 1 }
         },
         required: ['item']
@@ -150,8 +156,8 @@ const TOOL_SCHEMAS = [
       parameters: {
         type: 'object',
         properties: {
-          input: { type: 'string', description: 'Item to smelt, e.g. "raw_iron", "sand", "raw_copper", "potato".' },
-          fuel: { type: 'string', description: 'Fuel item to burn, e.g. "coal", "charcoal", "oak_planks".' },
+          input: { type: 'string', description: 'Item to smelt (lowercase underscored name).' },
+          fuel: { type: 'string', description: 'Fuel item to burn (lowercase underscored name).' },
           count: { type: 'integer', description: 'How many input items to smelt. Default 1.', default: 1 }
         },
         required: ['input', 'fuel']
@@ -165,7 +171,7 @@ const TOOL_SCHEMAS = [
       description: 'Equip an item from inventory to your hand (e.g. a pickaxe before mining stone/ore).',
       parameters: {
         type: 'object',
-        properties: { item: { type: 'string', description: 'e.g., "wooden_pickaxe"' } },
+        properties: { item: { type: 'string', description: 'The item to equip (lowercase underscored name)' } },
         required: ['item']
       }
     }
@@ -174,8 +180,13 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'look_around',
-      description: 'Scan surroundings: returns nearby blocks of interest and entities.',
-      parameters: { type: 'object', properties: {} }
+      description: 'Scan surroundings: returns nearby blocks and entities within a cube of the given radius (default 8 blocks). Returns "nearby_blocks" (total counts per block type — how abundant each is) AND "block_coords" (up to the 3 NEAREST [x,y,z] coordinates per block type, sorted closest-first). Every coordinate in "block_coords" is guaranteed to be that exact block type, so pick the first (closest) one and move_to(x,y,z) or mine_block(block_type, x, y, z) it directly. If a first scan does not reveal what you need, call it again with a LARGER radius to search farther out.',
+      parameters: {
+        type: 'object',
+        properties: {
+          radius: { type: 'number', description: 'How far out (in blocks) to scan in each horizontal direction. Defaults to 8. Increase it (e.g. 16, 24, 32) to widen the search when a smaller scan did not find what you are looking for.' }
+        }
+      }
     }
   },
   {
@@ -186,7 +197,7 @@ const TOOL_SCHEMAS = [
       parameters: {
         type: 'object',
         properties: {
-          target: { type: 'string', description: 'Item or block name to look up, e.g. "stone_pickaxe", "oak_planks", "iron_ore". Lowercase underscored names work best; "minecraft:" prefix and spaces are tolerated.' }
+          target: { type: 'string', description: 'Item or block name to look up. Lowercase underscored names work best; "minecraft:" prefix and spaces are tolerated.' }
         },
         required: ['target']
       }
@@ -220,7 +231,7 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'stop',
-      description: 'End the task. Call when goal is complete OR truly stuck.',
+      description: 'End the task. Call ONLY when the goal is complete, OR you have genuinely exhausted your options after trying several different approaches. A single failed step is not "stuck".',
       parameters: { type: 'object', properties: {} }
     }
   }
@@ -248,7 +259,7 @@ const TOOL_IMPLS = {
     return `Moved forward ${ms / 1000}s, traveled ${traveled} blocks to ${formatPos(bot.entity.position)}${note}`
   },
 
-  async mine_block(bot, { block_type }) {
+  async mine_block(bot, { block_type, x, y, z }) {
     const mcData = loadMcData(bot)
     const name = normalizeName(block_type)
     const blockId = mcData.blocksByName[name]?.id
@@ -257,52 +268,97 @@ const TOOL_IMPLS = {
       return `Unknown block: ${block_type}.${guesses.length ? ' Similar names: ' + guesses.join(', ') + '.' : ''}`
     }
 
-    const block = bot.findBlock({ matching: blockId, maxDistance: 32 })
-    if (!block) return `No ${name} found within 32 blocks.`
-
-    // Make sure we'll actually COLLECT a drop: stone/ores break into nothing unless the
-    // right tool is held. Auto-equip the best tool we own; refuse if we have none so the
-    // model goes and crafts a pickaxe instead of wasting the block by hand.
-    const tool = await ensureHarvestTool(bot, block)
-    if (tool.error) return tool.error
-
-    // Name this block is expected to drop, so we report on the SPECIFIC drop that lands in
-    // the inventory rather than on whatever the bot happened to vacuum up (old ground litter
-    // like dirt from earlier mining gets picked up mid-action and must NOT be misattributed
-    // to this block).
-    const expectedDrop = blockDropIds(block).map(id => idToName(mcData, id)).filter(Boolean)[0] || name
-
-    // Report the VERIFIED result for THIS block's drop only: compare the expectedDrop's count
-    // before/after. The block can break yet collect nothing (drop not yet picked up), and the
-    // bot can incidentally pick up unrelated items — neither should be reported as this block's
-    // yield. The per-step observation inventory still shows total counts for everything else.
-    const report = (before, note) => {
-      const gained = (readInventory(bot)[expectedDrop] || 0) - (before[expectedDrop] || 0)
-      return gained > 0
-        ? `Broke ${name} at ${formatPos(block.position)}; collected ${gained}x ${expectedDrop}.${note}`
-        : `Broke ${name} at ${formatPos(block.position)}; drop (${expectedDrop}) not collected yet.${note}`
+    // Two ways to pick the target block:
+    //  (a) explicit x,y,z — the model read a SPECIFIC coordinate from look_around's
+    //      "block_coords" and wants THAT block (e.g. the one exposed ore it spotted),
+    //      not whatever happens to be nearest.
+    //  (b) no coords — use the built-in "nearest matching block" search.
+    // (a) never replaces (b); it just lets the look_around coords steer mining.
+    let block
+    const hasCoords = [x, y, z].every(v => Number.isFinite(Number(v)))
+    if (hasCoords) {
+      const target = new Vec3(Math.floor(Number(x)), Math.floor(Number(y)), Math.floor(Number(z)))
+      block = bot.blockAt(target)
+      if (!block) {
+        return `No block found at (${target.x},${target.y},${target.z}) — it may be outside loaded chunks. Move closer or look_around again to refresh its coordinates.`
+      }
+      if (block.name !== name) {
+        // The world changed since the scan (already mined, or the model mistyped a coord).
+        // Don't silently mine the wrong block; let the model re-scan or pick again.
+        return `Block at (${target.x},${target.y},${target.z}) is ${block.name}, not ${name}. Re-run look_around to get fresh ${name} coordinates, or omit x/y/z to mine the nearest ${name}.`
+      }
+    } else {
+      block = bot.findBlock({ matching: blockId, maxDistance: 32 })
+      if (!block) return `No ${name} found within 32 blocks.`
     }
 
-    try {
-      const before = readInventory(bot)
-      await navigate(bot, new goals.GoalLookAtBlock(block.position, bot.world), block.position)
-      await bot.dig(block)
-      await collectNearbyDrops(bot, block.position)
-      await settleInventory(bot, before, expectedDrop)
-      return report(before, tool.note)
-    } catch (e) {
-      // Navigation may have stalled but left us within reach — try digging anyway.
+    // Walk to a block, dig it, and collect the drop — reporting the VERIFIED inventory gain.
+    // Returns { ok } on success, { error } if we own no tool that can harvest it, or
+    // { failed } when navigation/dig could not reach the block. Factored out so a specific
+    // coordinate that turns out UNREACHABLE (e.g. a log floating in a tree canopy, or a block
+    // across a ravine) can transparently fall back to the nearest reachable match instead of
+    // stranding the bot with a hard "stuck" failure.
+    const mineOne = async (target) => {
+      // Make sure we'll actually COLLECT a drop: stone/ores break into nothing unless the
+      // right tool is held. Auto-equip the best tool we own; refuse if we have none so the
+      // model goes and crafts a pickaxe instead of wasting the block by hand.
+      const tool = await ensureHarvestTool(bot, target)
+      if (tool.error) return { error: tool.error }
+
+      // Name this block is expected to drop, so we report on the SPECIFIC drop that lands in
+      // the inventory rather than on whatever the bot happened to vacuum up (old ground litter
+      // like dirt from earlier mining gets picked up mid-action and must NOT be misattributed
+      // to this block).
+      const expectedDrop = blockDropIds(target).map(id => idToName(mcData, id)).filter(Boolean)[0] || name
+      const report = (before) => {
+        const gained = (readInventory(bot)[expectedDrop] || 0) - (before[expectedDrop] || 0)
+        return gained > 0
+          ? `Broke ${name} at ${formatPos(target.position)}; collected ${gained}x ${expectedDrop}.${tool.note}`
+          : `Broke ${name} at ${formatPos(target.position)}; drop (${expectedDrop}) not collected yet.${tool.note}`
+      }
+
       try {
-        if (bot.entity.position.distanceTo(block.position) <= 5) {
-          const before = readInventory(bot)
-          await bot.dig(block)
-          await collectNearbyDrops(bot, block.position)
-          await settleInventory(bot, before, expectedDrop)
-          return report(before, tool.note)
-        }
-      } catch (_) { /* fall through to the failure message */ }
-      return `Failed to mine ${name}: ${e.message}`
+        const before = readInventory(bot)
+        await navigate(bot, new goals.GoalLookAtBlock(target.position, bot.world), target.position)
+        await bot.dig(target)
+        await collectNearbyDrops(bot, target.position)
+        await settleInventory(bot, before, expectedDrop)
+        return { ok: report(before) }
+      } catch (e) {
+        // Navigation may have stalled but left us within reach — try digging anyway.
+        try {
+          if (bot.entity.position.distanceTo(target.position) <= 5) {
+            const before = readInventory(bot)
+            await bot.dig(target)
+            await collectNearbyDrops(bot, target.position)
+            await settleInventory(bot, before, expectedDrop)
+            return { ok: report(before) }
+          }
+        } catch (_) { /* fall through to the failure result */ }
+        return { failed: e }
+      }
     }
+
+    const first = await mineOne(block)
+    if (first.ok) return first.ok
+    if (first.error) return first.error   // no usable tool — fallback wouldn't help
+
+    // Navigation to the chosen block failed. If we were aiming at a SPECIFIC coordinate that
+    // turned out unreachable, don't dead-end: retry with the nearest matching block (the same
+    // search used when no coords are given). This keeps look_around coords useful when the
+    // target is reachable, while restoring reliable traversal when the picked coord is not.
+    if (hasCoords) {
+      const nearest = bot.findBlock({ matching: blockId, maxDistance: 32 })
+      if (nearest && !nearest.position.equals(block.position)) {
+        const second = await mineOne(nearest)
+        if (second.ok) {
+          return `${second.ok} (Could not reach the exact coordinate (${block.position.x},${block.position.y},${block.position.z}) — it may be unreachable; mined the nearest ${name} instead.)`
+        }
+        if (second.error) return second.error
+        return `Failed to mine ${name}: could not reach the coordinate (${block.position.x},${block.position.y},${block.position.z}) or the nearest ${name} (${second.failed.message}). Try move_to a closer open spot first, or look_around for a more reachable one.`
+      }
+    }
+    return `Failed to mine ${name}: ${first.failed.message}`
   },
 
   async place_block(bot, { block_type, dx, dy, dz }) {
@@ -491,31 +547,68 @@ const TOOL_IMPLS = {
     }
   },
 
-  async look_around(bot) {
+  async look_around(bot, { radius } = {}) {
     const nearbyBlocks = {}
-    const radius = 8
-    for (let dx = -radius; dx <= radius; dx += 2) {
-      for (let dz = -radius; dz <= radius; dz += 2) {
-        for (let dy = -2; dy <= 2; dy++) {
-          const b = bot.blockAt(bot.entity.position.offset(dx, dy, dz))
+    // Per-block-name list of world coordinates the model can pick from to move_to/mine a
+    // SPECIFIC instance. We cap how many we surface per type — dumping every block (a
+    // 16-radius scan can find 10k+ stone) produced a huge wall of near-identical coordinate
+    // triples that the model could not read reliably. A short, distance-sorted list (the
+    // nearest few of each type) makes the coordinate it pulls trustworthy.
+    const coordsByType = {}
+    const MAX_COORDS_PER_TYPE = 3
+    // The model picks the radius so it can widen its own search when a scan comes up empty.
+    // Clamp to a sane range so a huge radius can't stall the bot scanning thousands of blocks.
+    let scanRadius = Number(radius)
+    if (!Number.isFinite(scanRadius) || scanRadius <= 0) scanRadius = 8
+    scanRadius = Math.min(Math.max(Math.round(scanRadius), 2), 64)
+
+    const origin = bot.entity.position
+    for (let dx = -scanRadius; dx <= scanRadius; dx++) {
+      for (let dz = -scanRadius; dz <= scanRadius; dz++) {
+        for (let dy = -scanRadius; dy <= scanRadius; dy++) {
+          const b = bot.blockAt(origin.offset(dx, dy, dz))
           if (b && b.name !== 'air' && b.name !== 'cave_air') {
             nearbyBlocks[b.name] = (nearbyBlocks[b.name] || 0) + 1
+            const dist = origin.distanceTo(b.position);
+            
+            (coordsByType[b.name] || (coordsByType[b.name] = [])).push({
+              xyz: [b.position.x, b.position.y, b.position.z],
+              dist
+            })
           }
         }
       }
     }
+
+    // Keep only the nearest few blocks per type, sorted closest-first, so the model can
+    // confidently pick the closest instance to move_to/mine.
+    const blockCoords = {}
+    for (const [name, list] of Object.entries(coordsByType)) {
+      list.sort((a, b) => a.dist - b.dist)
+      blockCoords[name] = list.slice(0, MAX_COORDS_PER_TYPE).map(e => e.xyz)
+    }
+
     // Exclude the bot itself AND other players (including the human) — players are not
     // resources or navigation targets, and surfacing them makes the model chase them.
     const entities = Object.values(bot.entities)
       .filter(e => e !== bot.entity && e.type !== 'player' && e.position && bot.entity.position.distanceTo(e.position) < 16)
       .map(e => ({ type: e.name || e.kind || e.type, dist: +bot.entity.position.distanceTo(e.position).toFixed(1) }))
 
-    return JSON.stringify({ nearby_blocks: nearbyBlocks, entities })
+    // "nearby_blocks" = total counts of every block type around you (abundance). "block_coords"
+    // = up to the 3 NEAREST coordinates per type, sorted closest-first, each guaranteed to be
+    // the block type it is listed under — pick one to move_to/mine.
+    return JSON.stringify({
+      scanned_radius: scanRadius,
+      coords_are: 'nearest blocks per type, sorted closest-first (up to 3 each)',
+      nearby_blocks: nearbyBlocks,
+      block_coords: blockCoords,
+      entities
+    })
   },
 
   async read_data(bot, { target }) {
     if (!target || typeof target !== 'string') {
-      return 'No target given. Call read_data with an item/block name, e.g. read_data({ target: "stone_pickaxe" }).'
+      return 'No target given. Call read_data with an item/block name, e.g. read_data({ target: "<item_name>" }).'
     }
     let mcData
     try {
