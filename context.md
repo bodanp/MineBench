@@ -53,6 +53,7 @@ scoring/            # turns runs into comparable results
 tasks/              # the task suite as data (*.json)
 results/            # one saved {scorecard, trace} JSON per run (output)
 bot/bot.js          # standalone smoke test — connects + walks; not part of the benchmark
+commands.md         # quick command reference (run/compare/server/dashboard)
 docs/team-plan.md   # team scope, role ownership, and design rationale
 ```
 
@@ -89,10 +90,11 @@ owning modules, not here.
 two models can be compared. Each bot runs the **unchanged single-bot command** in its **own
 console window** (`cmd start … cmd /k`, windows stay open), differing only by the
 `MC_BOT_USERNAME` injected via the spawn environment (`MC_BOT_USERNAME_A`/`_B`, default
-`MineBenchBotA`/`B`). The bots share one world (a "race" — they may compete for blocks). The
-controller waits until both children have written their `results/*.json` (timeout
-`DUAL_WAIT_MS`), then prints `store.printComparison`. Comparison rendering lives in `store.js`,
-keeping this file thin.
+`MineBenchBotA`/`B`). Before opening the two windows it closes any leftover bot windows from a
+previous dual run (matched by the `MineBenchBot*` window title) so repeated runs don't pile up.
+The bots share one world (a "race" — they may compete for blocks). The controller waits until
+both children have written their `results/*.json` (timeout `DUAL_WAIT_MS`), then prints
+`store.printComparison`. Comparison rendering lives in `store.js`, keeping this file thin.
 
 ### Harness / Runner — `harness/runner.js`
 The benchmark spine. `run({ task, model })` creates a mineflayer bot, waits for spawn, applies

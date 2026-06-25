@@ -16,7 +16,7 @@
 require('dotenv').config()
 const fs = require('fs')
 const path = require('path')
-const { spawn } = require('child_process')
+const { spawn, spawnSync } = require('child_process')
 
 const { run } = require('./harness/runner')
 const { resolveModel } = require('./agent/models')
@@ -69,6 +69,18 @@ function childArgsFor(args, taskId, goal, modelName) {
   a.push('--model', modelName)
   if (args.verbose === true) a.push('--verbose')
   return a
+}
+
+// Window-title prefix for the bot consoles we spawn — used both to title new windows and to
+// find/close leftover ones from a previous dual run.
+const BOT_WINDOW_PREFIX = 'MineBenchBot'
+
+// Close any bot consoles left open by a previous dual run (matched by window title), so repeated
+// runs don't pile up windows. Matches nothing on the first run (taskkill just returns non-zero).
+function closePreviousBotWindows() {
+  try {
+    spawnSync('taskkill', ['/FI', `WINDOWTITLE eq ${BOT_WINDOW_PREFIX}*`, '/T', '/F'], { stdio: 'ignore' })
+  } catch { /* taskkill unavailable or nothing to close — ignore */ }
 }
 
 // Open a new console window running one bot, with its username injected via the environment.
@@ -124,8 +136,9 @@ async function runDual(args, task, goal, modelA, modelB) {
   console.log(`   A: ${modelA}  (username ${usernameA})`)
   console.log(`   B: ${modelB}  (username ${usernameB})`)
 
-  spawnBotWindow({ title: `MineBench A: ${modelA}`, username: usernameA, childArgs: childArgsFor(args, task.id, goal, modelA) })
-  spawnBotWindow({ title: `MineBench B: ${modelB}`, username: usernameB, childArgs: childArgsFor(args, task.id, goal, modelB) })
+  closePreviousBotWindows()   // tidy up windows from a previous dual run before opening new ones
+  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-A: ${modelA}`, username: usernameA, childArgs: childArgsFor(args, task.id, goal, modelA) })
+  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-B: ${modelB}`, username: usernameB, childArgs: childArgsFor(args, task.id, goal, modelB) })
 
   console.log('\nOpened two bot windows. Waiting for both to finish...')
   console.log('(Each window stays open so you can read its logs; close them when done.)')
