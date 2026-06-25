@@ -10,11 +10,17 @@
 //
 // Endpoints:
 //   GET  /            -> dashboard static files (index.html, app.js, live.js, styles.css, data.js)
-//   GET  /events      -> Server-Sent Events stream (sends a snapshot of the current run on connect)
+//   GET  /events      -> Server-Sent Events stream (sends a snapshot of the current session on connect)
 //   POST /ingest      -> receive a run event from bench.js, update state, broadcast to clients
-//   GET  /state       -> JSON snapshot of the current run (debug / late join)
+//   GET  /state       -> JSON snapshot of the current session { session, runs:[...] }
 //
-// State machine for a run's status: running --(run_end)--> ended --(run_scored)--> done.
+// Concurrency: a single world can host two bots at once (dual mode). Each bot stamps its
+// events with { session, runId, slot } (see dashboard/live-client.js). Runs are kept in a map
+// keyed by runId so the two bots never clobber each other; a run_start carrying a NEW session
+// resets the group, so the next solo/dual run starts clean. Within a session, insertion order
+// (A before B) is preserved for rendering.
+//
+// State machine for each run's status: running --(run_end)--> ended --(run_scored)--> done.
 // run_end never downgrades a run that already reached 'done' (events can race on localhost).
 // ─────────────────────────────────────────────
 const http = require('http')
@@ -33,7 +39,10 @@ const CONTENT_TYPES = {
   '.ico': 'image/x-icon'
 }
 
-let currentRun = null
+// Runs of the current session, keyed by runId (e.g. 'A' / 'B' in dual mode, 'solo' otherwise).
+// Map preserves insertion order so the dashboard renders A before B.
+const runs = new Map()
+let currentSession = null
 const clients = new Set()
 
 function sse(res, event) {
@@ -43,8 +52,15 @@ function broadcast(event) {
   for (const res of clients) sse(res, event)
 }
 
+function snapshot() {
+  return { type: 'snapshot', session: currentSession, runs: Array.from(runs.values()) }
+}
+
 function startRun(e) {
-  currentRun = {
+  return {
+    runId: e.runId || 'solo',
+    slot: e.slot || null,
+    session: e.session || null,
     status: 'running',
     task_id: e.task_id || 'unknown',
     title: e.title || e.task_id || 'unknown',
@@ -61,6 +77,15 @@ function startRun(e) {
   }
 }
 
+// Find/lazily-create the run an event belongs to (events other than run_start can arrive first
+// if a client/server raced, or if run_start was missed).
+function runFor(e) {
+  const id = e.runId || 'solo'
+  let run = runs.get(id)
+  if (!run) { run = startRun(e); runs.set(id, run) }
+  return run
+}
+
 function regenerateHistory() {
   // Refresh dashboard/data.js so the historical view picks up the just-saved result.
   try {
@@ -73,30 +98,35 @@ function regenerateHistory() {
 function handleEvent(e) {
   if (!e || typeof e !== 'object') return
   switch (e.type) {
-    case 'run_start':
-      startRun(e)
+    case 'run_start': {
+      // A new session means a brand-new run/comparison — clear the previous group.
+      const session = e.session || null
+      if (session !== currentSession) { runs.clear(); currentSession = session }
+      runs.set(e.runId || 'solo', startRun(e))
       break
-    case 'step':
-      if (!currentRun) startRun({})
+    }
+    case 'step': {
+      const run = runFor(e)
       // De-dupe by step index in case a client races snapshot + broadcast.
-      if (!currentRun.steps.some(s => s.i === e.i)) currentRun.steps.push(e)
-      if (e.inventory) currentRun.latest_inventory = e.inventory
+      if (!run.steps.some(s => s.i === e.i)) run.steps.push(e)
+      if (e.inventory) run.latest_inventory = e.inventory
       break
-    case 'run_end':
-      if (currentRun) {
-        if (currentRun.status === 'running') currentRun.status = 'ended'
-        currentRun.ended_reason = e.ended_reason
-        currentRun.duration_s = e.duration_s
-        currentRun.final_inventory = e.final_inventory
-      }
+    }
+    case 'run_end': {
+      const run = runFor(e)
+      if (run.status === 'running') run.status = 'ended'
+      run.ended_reason = e.ended_reason
+      run.duration_s = e.duration_s
+      run.final_inventory = e.final_inventory
       break
-    case 'run_scored':
-      if (currentRun) {
-        currentRun.status = 'done'
-        currentRun.scorecard = e.scorecard
-      }
+    }
+    case 'run_scored': {
+      const run = runFor(e)
+      run.status = 'done'
+      run.scorecard = e.scorecard
       if (regenerateHistory()) broadcast({ type: 'history_updated' })
       break
+    }
     default:
       return
   }
@@ -127,7 +157,7 @@ const server = http.createServer((req, res) => {
     })
     res.write('retry: 2000\n\n')
     clients.add(res)
-    sse(res, { type: 'snapshot', run: currentRun })
+    sse(res, snapshot())
     const ping = setInterval(() => { try { res.write(': ping\n\n') } catch (_) {} }, 25000)
     req.on('close', () => { clearInterval(ping); clients.delete(res) })
     return
@@ -142,7 +172,7 @@ const server = http.createServer((req, res) => {
 
   if (url === '/state') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
-    return res.end(JSON.stringify(currentRun))
+    return res.end(JSON.stringify(snapshot()))
   }
 
   serveStatic(req, res)

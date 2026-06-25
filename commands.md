@@ -17,7 +17,8 @@ node bench.js --task gather_wood --model copilot/gpt-5.4 --verbose  # show agent
 ```
 
 ## Compare two models (dual mode)
-Opens two bot windows (one per model), then prints a side-by-side comparison.
+Opens two bot windows (one per model) that share **one world**; the live dashboard mirrors both
+**side-by-side** with a live winner, and the terminal also prints a side-by-side comparison.
 ```bash
 node bench.js --task gather_wood --model-a copilot/gpt-5.4 --model-b copilot/gpt-4o
 ```

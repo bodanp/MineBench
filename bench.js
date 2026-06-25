@@ -83,10 +83,14 @@ function closePreviousBotWindows() {
   } catch { /* taskkill unavailable or nothing to close — ignore */ }
 }
 
-// Open a new console window running one bot, with its username injected via the environment.
-// The window uses `cmd /k` so it stays open (logs remain scrollable) after the bot finishes.
-function spawnBotWindow({ title, username, childArgs }) {
+// Open a new console window running one bot, with its username (and live-dashboard run
+// identity) injected via the environment. The window uses `cmd /k` so it stays open (logs
+// remain scrollable) after the bot finishes.
+function spawnBotWindow({ title, username, slot, session, childArgs }) {
   const env = { ...process.env, MC_BOT_USERNAME: username }
+  // Live-dashboard identity so the server mirrors both bots side-by-side under one session.
+  if (slot) env.MINEBENCH_LIVE_SLOT = slot
+  if (session) env.MINEBENCH_LIVE_SESSION = session
   // cmd /c start "<title>" cmd /k node bench.js ...   (Node handles arg quoting)
   const child = spawn('cmd', ['/c', 'start', title, 'cmd', '/k', 'node', ...childArgs], {
     cwd: __dirname, env, windowsHide: false, stdio: 'ignore'
@@ -135,10 +139,15 @@ async function runDual(args, task, goal, modelA, modelB) {
   console.log(`\n▶ Dual run on task "${task.id}":`)
   console.log(`   A: ${modelA}  (username ${usernameA})`)
   console.log(`   B: ${modelB}  (username ${usernameB})`)
+  console.log('   Live dashboard mirrors both bots side-by-side → http://localhost:8099')
+
+  // One shared live-dashboard session groups both bots so the dashboard shows them as a
+  // single side-by-side comparison (and resets cleanly when the next run starts).
+  const liveSession = `dual-${task.id}-${sinceMs}`
 
   closePreviousBotWindows()   // tidy up windows from a previous dual run before opening new ones
-  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-A: ${modelA}`, username: usernameA, childArgs: childArgsFor(args, task.id, goal, modelA) })
-  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-B: ${modelB}`, username: usernameB, childArgs: childArgsFor(args, task.id, goal, modelB) })
+  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-A: ${modelA}`, username: usernameA, slot: 'A', session: liveSession, childArgs: childArgsFor(args, task.id, goal, modelA) })
+  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-B: ${modelB}`, username: usernameB, slot: 'B', session: liveSession, childArgs: childArgsFor(args, task.id, goal, modelB) })
 
   console.log('\nOpened two bot windows. Waiting for both to finish...')
   console.log('(Each window stays open so you can read its logs; close them when done.)')

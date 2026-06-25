@@ -90,8 +90,11 @@ owning modules, not here.
 two models can be compared. Each bot runs the **unchanged single-bot command** in its **own
 console window** (`cmd start … cmd /k`, windows stay open), differing only by the
 `MC_BOT_USERNAME` injected via the spawn environment (`MC_BOT_USERNAME_A`/`_B`, default
-`MineBenchBotA`/`B`). Before opening the two windows it closes any leftover bot windows from a
-previous dual run (matched by the `MineBenchBot*` window title) so repeated runs don't pile up.
+`MineBenchBotA`/`B`). Both bots also get a **shared live-dashboard session**
+(`MINEBENCH_LIVE_SESSION`) and a per-bot **slot** (`MINEBENCH_LIVE_SLOT=A`/`B`) so the live
+dashboard mirrors them **side-by-side in one world** with a live winner (see live-server/live.js
+below). Before opening the two windows it closes any leftover bot windows from a previous dual
+run (matched by the `MineBenchBot*` window title) so repeated runs don't pile up.
 The bots share one world (a "race" — they may compete for blocks). The controller waits until
 both children have written their `results/*.json` (timeout `DUAL_WAIT_MS`), then prints
 `store.printComparison`. Comparison rendering lives in `store.js`, keeping this file thin.
@@ -206,13 +209,30 @@ A standalone connection sanity check (`npm run smoke`): connects to the server, 
 spawn, and walks forward for 30s. Not part of the benchmark loop — use it to verify server
 connectivity/credentials.
 
+### Live dashboard — `dashboard/` (`live-server.js`, `live.js`, `live-client.js`, `app.js`, `build.js`)
+A zero-dependency, no-build dashboard. `live-client.js`'s `createLiveEmitter()` (wired into
+`bench.js`) fire-and-forgets `run_start/step/run_end/run_scored` events to the live server,
+**stamping each with `{ session, runId, slot }`** so concurrent bots never clobber each other.
+`live-server.js` (`npm run dashboard:live`, port 8099) keeps a **map of runs keyed by `runId`**
+for the **current session**; a `run_start` carrying a new session resets the group (so the next
+solo/dual run starts clean). It serves the static page and streams events over SSE
+(`/events`), exposing `{ session, runs: [...] }` via snapshot and `/state`. `live.js` mirrors
+that session and renders **one panel per run** — a solo run is 1-up, a dual run is **two panels
+side-by-side (slots A/B) in one world** — and, once both finish, a **winner banner** computed
+by a client mirror of `store.pickWinner` (success → higher score → fewer steps). `build.js`
+regenerates `data.js` for the historical leaderboard (`app.js`), refreshed live on each
+`run_scored`. All model-authored text is inserted via `textContent` to avoid markup injection.
+
 ## Configuration & scripts
 - **Env** (`.env`, see `.env.example`): `AZURE_OPENAI_*` (key/endpoint/deployment/api-version),
   `USE_ENTRA`, `AZURE_MIN_REQUEST_INTERVAL_MS`, `COPILOT_TOKEN`, `MC_SERVER_HOST/PORT`,
   `MC_BOT_USERNAME`/`BOT_NAME`, `MAX_STEPS`. Dual mode adds `MC_BOT_USERNAME_A`/`_B` (one bot
-  each; both must be op'd) and optional `DUAL_WAIT_MS` (controller wait before timeout). Loaded
-  via `dotenv`.
+  each; both must be op'd) and optional `DUAL_WAIT_MS` (controller wait before timeout). Live
+  dashboard knobs: `MINEBENCH_LIVE` (`0` disables), `MINEBENCH_LIVE_URL`/`MINEBENCH_LIVE_PORT`,
+  and the dual-run identity `MINEBENCH_LIVE_SESSION` (shared) + `MINEBENCH_LIVE_SLOT` (`A`/`B`,
+  set automatically by `bench.js`). Loaded via `dotenv`.
 - **Scripts** (`package.json`): `npm run bench` / `npm run agent` → `node bench.js`;
-  `npm run smoke` → `node bot/bot.js`.
+  `npm run smoke` → `node bot/bot.js`; `npm run dashboard` → build static `data.js`;
+  `npm run dashboard:live` → live SSE dashboard at http://localhost:8099.
 - **Server prerequisites**: the bot must be **OP** for `harness/env.js` setup to apply, and the
   server's anti-cheat may need loosened movement thresholds (`spigot.yml`) to avoid kicks.

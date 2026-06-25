@@ -159,3 +159,33 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .refresh-btn { margin-top: 12px; width: 100%; background: var(--accent-dim); color: #fff; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
 .refresh-btn:hover { background: var(--accent); }
 
+/* ── Live panels (1-up solo, 2-up dual same-world race) ───────── */
+.live-panels { display: grid; gap: 16px; margin-top: 12px; }
+.live-panels.one { grid-template-columns: 1fr; }
+.live-panels.two { grid-template-columns: 1fr 1fr; }
+@media (max-width: 900px) { .live-panels.two { grid-template-columns: 1fr; } }
+.live-waiting { padding: 8px 2px; font-size: 13px; }
+
+.live-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.live-panel.winner { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim) inset; }
+/* In 2-up mode each panel is narrow, so stack steps over inventory. */
+.live-panels.two .live-cols { grid-template-columns: 1fr; }
+
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.panel-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.panel-title-text { font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-status { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.panel-status.s-done { color: var(--ok); }
+.panel-status.s-running { color: var(--accent); }
+
+.slot-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 6px; font-weight: 800; font-size: 12px; color: #fff; }
+.slot-badge.slot-A { background: #3a7bd5; }
+.slot-badge.slot-B { background: #b5562e; }
+.winner-badge { font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-dim); border-radius: 6px; padding: 1px 7px; }
+
+.live-compare { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; margin: 8px 0 2px; padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--accent-dim); border-radius: 8px; }
+.live-compare .compare-win { font-weight: 800; color: var(--accent); font-size: 14px; }
+.live-compare .compare-tie { font-weight: 700; color: var(--text); font-size: 14px; }
+.live-compare .compare-note { color: var(--muted); font-size: 11.5px; }
+.live-foot:empty { display: none; }
+
