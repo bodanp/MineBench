@@ -14,6 +14,7 @@ async function applyTaskSetup(bot, task, log = () => {}) {
   const cmds = []
 
   cmds.push(`/attribute ${bot.username} minecraft:scale base set 0.9999999`)
+  cmds.push(`/advancement revoke ${bot.username} everything`)
   for (const [rule, val] of Object.entries(s.gamerules || {})) cmds.push(`/gamerule ${rule} ${val}`)
   if (s.time) cmds.push(`/time set ${s.time}`)
   if (s.weather) cmds.push(`/weather ${s.weather}`)
