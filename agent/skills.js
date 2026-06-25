@@ -180,7 +180,7 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'look_around',
-      description: 'Scan surroundings: returns nearby blocks and entities within a cube of the given radius (default 8 blocks). Returns "nearby_blocks" (total counts per block type — how abundant each is) AND "block_coords" (up to the 8 NEAREST, EXPOSED [reachable] [x,y,z] coordinates per block type, sorted closest-first). Every coordinate in "block_coords" is guaranteed to be that exact block type and reachable, so pick the first (closest) one and move_to(x,y,z) or mine_block(block_type, x, y, z) it directly. If a first scan does not reveal what you need, call it again with a LARGER radius to search farther out.',
+      description: 'Scan surroundings: returns nearby blocks and entities within a cube of the given radius (default 8 blocks). Returns "nearby_blocks" (total counts per block type — how abundant each is) AND "block_coords" (up to the 3 NEAREST [x,y,z] coordinates per block type, sorted closest-first). Every coordinate in "block_coords" is guaranteed to be that exact block type, so pick the first (closest) one and move_to(x,y,z) or mine_block(block_type, x, y, z) it directly. If a first scan does not reveal what you need, call it again with a LARGER radius to search farther out.',
       parameters: {
         type: 'object',
         properties: {
@@ -310,36 +310,29 @@ const TOOL_IMPLS = {
       // like dirt from earlier mining gets picked up mid-action and must NOT be misattributed
       // to this block).
       const expectedDrop = blockDropIds(target).map(id => idToName(mcData, id)).filter(Boolean)[0] || name
-      const report = (before, collected) => {
+      const report = (before) => {
         const gained = (readInventory(bot)[expectedDrop] || 0) - (before[expectedDrop] || 0)
-        if (gained > 0) {
-          return `Broke ${name} at ${formatPos(target.position)}; collected ${gained}x ${expectedDrop}.${tool.note}`
-        }
-        // No inventory gain. Distinguish "the drop is sitting nearby but I couldn't path to it"
-        // (e.g. it landed up on a trunk/ledge) from "it just hasn't registered yet", so the
-        // model knows whether to reposition/dig toward it vs simply re-check next step.
-        const strandedNote = collected === false
-          ? ` drop (${expectedDrop}) landed out of reach — move_to ${formatPos(target.position)} or clear a path to collect it.`
-          : ` drop (${expectedDrop}) not collected yet.`
-        return `Broke ${name} at ${formatPos(target.position)};${strandedNote}${tool.note}`
+        return gained > 0
+          ? `Broke ${name} at ${formatPos(target.position)}; collected ${gained}x ${expectedDrop}.${tool.note}`
+          : `Broke ${name} at ${formatPos(target.position)}; drop (${expectedDrop}) not collected yet.${tool.note}`
       }
 
       try {
         const before = readInventory(bot)
         await navigate(bot, new goals.GoalLookAtBlock(target.position, bot.world), target.position)
         await bot.dig(target)
-        const collected = await collectNearbyDrops(bot, target.position)
+        await collectNearbyDrops(bot, target.position)
         await settleInventory(bot, before, expectedDrop)
-        return { ok: report(before, collected) }
+        return { ok: report(before) }
       } catch (e) {
         // Navigation may have stalled but left us within reach — try digging anyway.
         try {
           if (bot.entity.position.distanceTo(target.position) <= 5) {
             const before = readInventory(bot)
             await bot.dig(target)
-            const collected = await collectNearbyDrops(bot, target.position)
+            await collectNearbyDrops(bot, target.position)
             await settleInventory(bot, before, expectedDrop)
-            return { ok: report(before, collected) }
+            return { ok: report(before) }
           }
         } catch (_) { /* fall through to the failure result */ }
         return { failed: e }
@@ -557,14 +550,12 @@ const TOOL_IMPLS = {
   async look_around(bot, { radius } = {}) {
     const nearbyBlocks = {}
     // Per-block-name list of world coordinates the model can pick from to move_to/mine a
-    // SPECIFIC instance. We only keep EXPOSED blocks (see below) and cap how many we surface
-    // per type — dumping every block (a 16-radius scan can find 10k+ stone) produced a
-    // 300KB+ wall of near-identical coordinate triples that the model could not read
-    // reliably: it would grab a coordinate that actually belonged to the adjacent block
-    // type's array (e.g. pick a "stone" coord that was really a dirt position). A short,
-    // distance-sorted list of reachable blocks makes the coordinate it pulls trustworthy.
-    const exposedByType = {}
-    const MAX_COORDS_PER_TYPE = 8
+    // SPECIFIC instance. We cap how many we surface per type — dumping every block (a
+    // 16-radius scan can find 10k+ stone) produced a huge wall of near-identical coordinate
+    // triples that the model could not read reliably. A short, distance-sorted list (the
+    // nearest few of each type) makes the coordinate it pulls trustworthy.
+    const coordsByType = {}
+    const MAX_COORDS_PER_TYPE = 3
     // The model picks the radius so it can widen its own search when a scan comes up empty.
     // Clamp to a sane range so a huge radius can't stall the bot scanning thousands of blocks.
     let scanRadius = Number(radius)
@@ -572,35 +563,27 @@ const TOOL_IMPLS = {
     scanRadius = Math.min(Math.max(Math.round(scanRadius), 2), 64)
 
     const origin = bot.entity.position
-    const isAir = (b) => !b || b.name === 'air' || b.name === 'cave_air'
-    // A block is reachable/mineable only if at least one face touches air — a block buried
-    // deep inside rock can't be pathed to, so surfacing its coordinate is useless and just
-    // invites a doomed move_to/mine. Checking the 6 face-neighbors keeps the list actionable.
-    const FACES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
-    const isExposed = (pos) => FACES.some(([ox, oy, oz]) => isAir(bot.blockAt(pos.offset(ox, oy, oz))))
-
     for (let dx = -scanRadius; dx <= scanRadius; dx++) {
       for (let dz = -scanRadius; dz <= scanRadius; dz++) {
         for (let dy = -scanRadius; dy <= scanRadius; dy++) {
           const b = bot.blockAt(origin.offset(dx, dy, dz))
           if (b && b.name !== 'air' && b.name !== 'cave_air') {
             nearbyBlocks[b.name] = (nearbyBlocks[b.name] || 0) + 1
-            if (isExposed(b.position)) {
-              const dist = origin.distanceTo(b.position)
-              ;(exposedByType[b.name] || (exposedByType[b.name] = [])).push({
-                xyz: [b.position.x, b.position.y, b.position.z],
-                dist
-              })
-            }
+            const dist = origin.distanceTo(b.position);
+            
+            (coordsByType[b.name] || (coordsByType[b.name] = [])).push({
+              xyz: [b.position.x, b.position.y, b.position.z],
+              dist
+            })
           }
         }
       }
     }
 
-    // Keep only the nearest few EXPOSED blocks per type, sorted closest-first, so the model
-    // can confidently pick the closest reachable instance to move_to/mine.
+    // Keep only the nearest few blocks per type, sorted closest-first, so the model can
+    // confidently pick the closest instance to move_to/mine.
     const blockCoords = {}
-    for (const [name, list] of Object.entries(exposedByType)) {
+    for (const [name, list] of Object.entries(coordsByType)) {
       list.sort((a, b) => a.dist - b.dist)
       blockCoords[name] = list.slice(0, MAX_COORDS_PER_TYPE).map(e => e.xyz)
     }
@@ -612,11 +595,11 @@ const TOOL_IMPLS = {
       .map(e => ({ type: e.name || e.kind || e.type, dist: +bot.entity.position.distanceTo(e.position).toFixed(1) }))
 
     // "nearby_blocks" = total counts of every block type around you (abundance). "block_coords"
-    // = up to a few NEAREST, EXPOSED (reachable) coordinates per type — these are the ones you
-    // can actually path to and mine, each guaranteed to be the block type it is listed under.
+    // = up to the 3 NEAREST coordinates per type, sorted closest-first, each guaranteed to be
+    // the block type it is listed under — pick one to move_to/mine.
     return JSON.stringify({
       scanned_radius: scanRadius,
-      coords_are: 'nearest reachable (exposed) blocks only, sorted closest-first',
+      coords_are: 'nearest blocks per type, sorted closest-first (up to 3 each)',
       nearby_blocks: nearbyBlocks,
       block_coords: blockCoords,
       entities
@@ -769,42 +752,16 @@ async function equipAndConfirm(bot, item) {
 // After breaking a block, its drop spawns near `pos` as an item entity. Walk onto it so the
 // bot auto-collects it — mining from a distance (or the stuck-recovery dig) otherwise leaves
 // the drop on the ground (e.g. cobblestone never picked up, so the run shows 0 progress).
-//
-// TEST IMPLEMENTATION (drop-pickup fix): when the bot mines a block it is NOT standing right
-// next to — e.g. a tree log one+ jump up, reached only within digging range by
-// GoalLookAtBlock — the item lands out of the auto-pickup radius and the old single GoalNear
-// attempt frequently couldn't path to it. Now we: (1) first try to stand ON the dig spot
-// itself (the block is now air, so this puts us where the drop tends to fall), then (2) chase
-// the actual item entity within a wider radius, retrying a few times as gravity settles it.
-// Returns true if no drop is left stranded nearby, false if one remains unreachable.
 async function collectNearbyDrops(bot, pos) {
-  const PICKUP_RADIUS = 5
   const nearestDrop = () => Object.values(bot.entities)
-    .filter(e => e.name === 'item' && e.position && e.position.distanceTo(pos) < PICKUP_RADIUS)
+    .filter(e => e.name === 'item' && e.position && e.position.distanceTo(pos) < 3)
     .sort((a, b) => a.position.distanceTo(pos) - b.position.distanceTo(pos))[0]
-
-  // Let the drop spawn (it can take a few ticks, plus a moment to fall if the block was up high).
-  for (let i = 0; i < 10 && !nearestDrop(); i++) await sleep(50)
-  if (!nearestDrop()) return true   // nothing dropped (or already vacuumed up) — not stranded
-
-  // (1) Stand on the spot we just mined. For an elevated block this climbs the bot up to the
-  // drop's level; for a ground block it's a no-op. Best-effort — if we can't path up, we still
-  // try to chase the item entity below.
+  for (let i = 0; i < 6 && !nearestDrop(); i++) await sleep(50)   // let the drop spawn
+  const drop = nearestDrop()
+  if (!drop) return
   try {
-    await navigate(bot, new goals.GoalNear(pos.x, pos.y, pos.z, 1), pos)
-  } catch (_) { /* couldn't reach the dig spot — fall through to chasing the item */ }
-
-  // (2) Walk onto the item entity itself, re-pathing a few times as it settles / as we approach.
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const drop = nearestDrop()
-    if (!drop) return true   // collected (entity gone) — done
-    try {
-      await navigate(bot, new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 0), drop.position)
-    } catch (_) { /* couldn't path to this drop — try again or give up below */ }
-    await sleep(150)
-  }
-  // Still an item entity sitting nearby that we couldn't reach.
-  return !nearestDrop()
+    await navigate(bot, new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1), drop.position)
+  } catch (_) { /* best-effort pickup */ }
 }
 
 // One shared, reusable Movements config (recreating it on every call is wasteful).
