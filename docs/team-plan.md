@@ -64,6 +64,14 @@ Nothing else can start until these are pinned. They are the seams between module
 `{ "inventory": { "<item>": <minCount>, ... } }` → true when the bot holds ≥ each count.
 (Future: `{ "placed": "<block>" }`, `{ "reach": [x,y,z], "radius": n }` — not for v1.)
 
+**Milestones (partial-credit progress) are AUTO-DERIVED — you do not hand-author them.** Scoring
+walks the goal item's ingredient graph from Minecraft's own recipe data, so a new task that just
+declares `success: { <item>: n }` gets a progress chain for free. Optionally add an explicit
+`"progress": [ { "item": "...", "count": 1, "label": "..." }, ... ]` to a task ONLY for long-
+horizon tasks whose process/tool-tier steps (smelting; mining gated by tool tier) the crafting
+graph cannot see (e.g. iron). Even with no chain at all, 4 of the 6 capability dimensions still
+score the run. See `scoring/milestones.js`.
+
 ### B. Trace schema — emitted by Role 1, consumed by Role 2
 ```jsonc
 {
@@ -80,14 +88,38 @@ Nothing else can start until these are pinned. They are the seams between module
 ```
 
 ### C. Scorecard schema — produced by Role 2, consumed by Role 6
+MineBench is a proxy for GENERAL agentic capability (Minecraft is just the instrument), so a run
+is NOT collapsed to one "A beats B" scalar. The scorecard is a **capability profile** — six
+deterministic, transferable dimensions (each 0..1, or `null` when the run never exercised it, so
+it's excluded from averages rather than scored 0). Scoring is a pure function of (trace, task):
+no LLM judge (non-deterministic + biased), no elapsed time (LLM-latency-dominated, not behaviour).
 ```jsonc
 {
   "task_id": "stone_pickaxe", "model": "gpt-4.1-mini",
-  "success": true, "steps": 34, "duration_s": 142,
-  "tool_calls": 41, "tool_errors": 6, "repeated_actions": 3, "stuck_events": 1,
-  "score": 0.78          // formula owned by Role 2, tunable
+  "success": true,
+  "progress": 0.86,                  // milestone partial credit (how far down the dependency chain)
+  "milestones": { "reached": 6, "total": 7, "list": [ { "label": "...", "reached": true } ] },
+  "capabilities": {
+    "completion": 0.86,              // milestone progress
+    "planning":   0.90,              // prerequisites pursued before dependents (no premature attempts)
+    "tool_use":   0.81,              // valid actions / preconditions (1 - self-inflicted errors)
+    "adaptation": 1.0,               // after a SELF-caused failure, does the next action differ
+    "robustness": null,              // recovery after an EXTERNAL disturbance (e.g. stolen resource)
+    "efficiency": 0.57               // productive-action ratio (NOT duration, NOT raw step count)
+  },
+  "diagnostics": {                   // informational, never subtracted from the score
+    "actions": 28, "productive_actions": 16, "unproductive_loops": 8,
+    "agent_errors": 7, "env_errors": 2, "disturbance_events": 0
+  },
+  "duration_s": 142,                 // INFORMATIONAL ONLY — never part of the score
+  "score": 0.78                      // roll-up digest of the profile (the profile is the headline)
 }
 ```
+**Why a profile, not a scalar:** it surfaces tradeoffs honestly — e.g. "A completes more tasks
+but B uses tools more precisely and recovers from disturbances better" — which is what an unbiased
+model-vs-model benchmark should report. Errors are DIAGNOSTICS (classified agent-fault vs
+environmental); only *looping* (repeating an action that changed nothing) is ever penalised, and
+legitimate repeats (mining log after log) are not.
 
 ---
 
