@@ -180,3 +180,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .refresh-btn:hover { background: var(--accent); }
 .run-error { margin-top: 12px; background: rgba(225,92,92,.10); border: 1px solid rgba(225,92,92,.35); color: var(--err); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; white-space: pre-wrap; }
 
+
+/* ── Capability profile (scoring redesign) ─────────────────────────────── */
+#capabilities td.cap-best { color: var(--accent); font-weight: 700; background: rgba(93,184,91,.10); }
+.cap-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.cap-row { display: grid; grid-template-columns: 160px 1fr 40px; align-items: center; gap: 10px; }
+.cap-name { color: var(--muted); font-size: 12.5px; }
+.cap-track { position: relative; height: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.cap-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+.cap-val { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.inv-chip.ms-done { color: var(--ok); border-color: rgba(76,175,80,.35); }
+.inv-chip.ms-todo { color: var(--muted); opacity: .7; }

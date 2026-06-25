@@ -58,6 +58,12 @@ npm run servers:down         # stop servers this launcher started
   `MINEBENCH_SERVER_A_DIR`/`_B_DIR`, `MINEBENCH_SERVER_A_PORT`/`_B_PORT`.
 - Server B auto-provisions (clones from A) the first time head-to-head "different worlds" runs.
 
+## Give players infinite night vision
+Run in the server console (or as an op'd player) to grant night vision that never expires.
+```bash
+/effect give @s night_vision infinite 0 true
+```
+
 ## Other
 ```bash
 npm run smoke                # connect + walk 30s sanity check (node bot/bot.js)
