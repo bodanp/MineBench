@@ -123,6 +123,26 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .site-footer { padding: 24px 20px 40px; }
 
+/* ── Run controls (launch from page) ─────────────────────────── */
+.run-controls { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; }
+.rc-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.rc-field { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.rc-field select, .rc-field input {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 13.5px; min-width: 200px; font-family: inherit;
+}
+.rc-field select:focus, .rc-field input:focus { outline: none; border-color: var(--accent-dim); }
+.btn-start, .btn-stop { border: none; border-radius: 8px; padding: 9px 16px; font-size: 13.5px; font-weight: 600; cursor: pointer; color: #fff; }
+.btn-start { background: var(--accent-dim); }
+.btn-start:hover:not(:disabled) { background: var(--accent); }
+.btn-stop { background: #7d3636; }
+.btn-stop:hover:not(:disabled) { background: var(--err); }
+.btn-start:disabled, .btn-stop:disabled { opacity: .4; cursor: not-allowed; }
+.rc-msg { margin-top: 10px; font-size: 13px; min-height: 16px; }
+.rc-msg.error { color: var(--err); white-space: pre-wrap; }
+.rc-msg.info { color: var(--muted); }
+.rc-msg.ok { color: var(--ok); }
+
 /* ── Live panel ─────────────────────────────────────────────── */
 .live {
   background: linear-gradient(180deg, #19211b, var(--panel));
@@ -158,6 +178,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .sc-grid .item .v.bad { color: var(--err); }
 .refresh-btn { margin-top: 12px; width: 100%; background: var(--accent-dim); color: #fff; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
 .refresh-btn:hover { background: var(--accent); }
+.run-error { margin-top: 12px; background: rgba(225,92,92,.10); border: 1px solid rgba(225,92,92,.35); color: var(--err); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; white-space: pre-wrap; }
 
 
 /* ── Capability profile (scoring redesign) ─────────────────────────────── */

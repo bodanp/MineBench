@@ -8,8 +8,8 @@
     "agent": "node bench.js",
     "test": "node scoring/scorer.selftest.js",
     "smoke": "node bot/bot.js",
-    "dashboard": "node dashboard/build.js",
-    "dashboard:live": "node dashboard/live-server.js"
+    "dashboard": "node dashboard/live-server.js",
+    "dashboard:build": "node dashboard/build.js"
   },
   "repository": {
     "type": "git",
