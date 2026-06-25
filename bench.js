@@ -23,6 +23,7 @@ const { resolveModel } = require('./agent/models')
 const { score } = require('./scoring/scorer')
 const { saveResult, resultFilesForTask, printComparison } = require('./scoring/store')
 const { createLiveEmitter } = require('./dashboard/live-client')
+const sm = require('./harness/server-manager')
 
 const TASKS_DIR = path.join(__dirname, 'tasks')
 
@@ -62,11 +63,14 @@ function adHocTask(goal) {
 }
 
 // Rebuild the CLI args a child single-bot run needs (same task/goal, one model).
+// Children always run with --no-server: the parent (dual orchestrator) already ensured the
+// servers, so each child just connects to the port injected via MC_SERVER_PORT.
 function childArgsFor(args, taskId, goal, modelName) {
   const a = ['bench.js']
   if (goal) a.push('--goal', goal)
   else a.push('--task', taskId)
   a.push('--model', modelName)
+  a.push('--no-server')
   if (args.verbose === true) a.push('--verbose')
   return a
 }
@@ -83,10 +87,12 @@ function closePreviousBotWindows() {
   } catch { /* taskkill unavailable or nothing to close — ignore */ }
 }
 
-// Open a new console window running one bot, with its username injected via the environment.
-// The window uses `cmd /k` so it stays open (logs remain scrollable) after the bot finishes.
-function spawnBotWindow({ title, username, childArgs }) {
+// Open a new console window running one bot, with its username + server port injected via the
+// environment. The window uses `cmd /k` so it stays open (logs remain scrollable) after the bot
+// finishes.
+function spawnBotWindow({ title, username, port, childArgs }) {
   const env = { ...process.env, MC_BOT_USERNAME: username }
+  if (port) env.MC_SERVER_PORT = String(port)
   // cmd /c start "<title>" cmd /k node bench.js ...   (Node handles arg quoting)
   const child = spawn('cmd', ['/c', 'start', title, 'cmd', '/k', 'node', ...childArgs], {
     cwd: __dirname, env, windowsHide: false, stdio: 'ignore'
@@ -126,19 +132,28 @@ async function waitForResults({ taskId, sinceMs, modelA, modelB, maxWaitMs }) {
 }
 
 async function runDual(args, task, goal, modelA, modelB) {
-  const usernameA = process.env.MC_BOT_USERNAME_A || 'MineBenchBotA'
-  const usernameB = process.env.MC_BOT_USERNAME_B || 'MineBenchBotB'
   // Generous wait: ~step budget at a slow pace, plus spawn/setup buffer. Overridable via env.
   const maxWaitMs = parseInt(process.env.DUAL_WAIT_MS || String((task.max_steps || 60) * 15000 + 120000))
+  const world = args.world === 'same' ? 'same' : 'different'
+
+  // One call resolves the whole server config: provisions/boots the right server(s), applies the
+  // reset, and hands back the [{port, username}] targets for each bot. Same world = one server +
+  // two distinct bots; different = two same-seed servers.
+  let targets
+  if (args.server !== false && args['no-server'] !== true) {
+    targets = await sm.prepareForRun({ mode: 'h2h', world, reset: args.reset === true })
+  } else {
+    targets = [{ port: sm.SERVERS.A.port, username: sm.USERNAME_A }, { port: world === 'same' ? sm.SERVERS.A.port : sm.SERVERS.B.port, username: world === 'same' ? sm.USERNAME_B : sm.USERNAME }]
+  }
   const sinceMs = Date.now()
 
-  console.log(`\n▶ Dual run on task "${task.id}":`)
-  console.log(`   A: ${modelA}  (username ${usernameA})`)
-  console.log(`   B: ${modelB}  (username ${usernameB})`)
+  console.log(`\n▶ Dual run on task "${task.id}" (${world} world):`)
+  console.log(`   A: ${modelA}  (port ${targets[0].port}, ${targets[0].username})`)
+  console.log(`   B: ${modelB}  (port ${targets[1].port}, ${targets[1].username})`)
 
   closePreviousBotWindows()   // tidy up windows from a previous dual run before opening new ones
-  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-A: ${modelA}`, username: usernameA, childArgs: childArgsFor(args, task.id, goal, modelA) })
-  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-B: ${modelB}`, username: usernameB, childArgs: childArgsFor(args, task.id, goal, modelB) })
+  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-A: ${modelA}`, username: targets[0].username, port: targets[0].port, childArgs: childArgsFor(args, task.id, goal, modelA) })
+  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-B: ${modelB}`, username: targets[1].username, port: targets[1].port, childArgs: childArgsFor(args, task.id, goal, modelB) })
 
   console.log('\nOpened two bot windows. Waiting for both to finish...')
   console.log('(Each window stays open so you can read its logs; close them when done.)')
@@ -172,6 +187,20 @@ async function main() {
   }
 
   console.log(`\n▶ Running task "${task.id}" with model "${model.name}" (max ${task.max_steps} steps)\n`)
+
+  // Auto-launch server A (adopts it if already running, boots/provisions it if not), unless
+  // --no-server. Servers are left warm after the run. Use --reset to wipe + regenerate the world.
+  if (args.server !== false && args['no-server'] !== true) {
+    try {
+      const [target] = await sm.prepareForRun({ mode: 'single', reset: args.reset === true })
+      process.env.MC_SERVER_PORT = String(target.port)
+      process.env.MC_BOT_USERNAME = target.username
+    } catch (e) {
+      console.error('Server launch failed:', e.message)
+      process.exit(1)
+    }
+  }
+
   // Live dashboard sink: streams run_start/step/run_end to dashboard/live-server.js if it's
   // running (no-op otherwise). Start it with `npm run dashboard:live` to watch live.
   const emit = createLiveEmitter()
