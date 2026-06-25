@@ -70,40 +70,44 @@ The money shot. Same task, same world, two brains — **watch them think, read t
 
 ### 3a. Set the stage (~15s)
 
-> **[Dashboard idle at `localhost:8099`, Minecraft beside it.]**
-> "The task: **craft a gold ingot.** Each model starts with raw gold, some coal, and a furnace.
-> To win it has to *place the furnace, pick the right fuel, and smelt the gold* — perceive,
-> plan, act, verify. Easy to say, and exactly the kind of short plan where two models quietly
-> disagree."
+> **[`npm run dashboard` — the page opens itself at `localhost:8099`; Minecraft beside it.]**
+> "One command — `npm run dashboard` — and the board opens itself. Up top there's a control
+> bar: a **task dropdown**, a **model box**, and a **Start** button. No terminal from here on —
+> we drive the whole demo from this page. The task: **craft a gold ingot.** Each model starts
+> with raw gold, some coal, and a furnace, and has to *place the furnace, pick the right fuel,
+> and smelt the gold* — perceive, plan, act, verify. Exactly the kind of short plan where two
+> models quietly disagree."
 
 ### 3b. Model A, live (~45s)
 
-> **[Run: `node bench.js --task gold_ingot --model copilot/gpt-5.4 --verbose`]**
-> "Watch the dashboard fill in real time. Every row is one decision: a **Thought** — the
-> model's reasoning, in its own words — then one **Action**, the **Result**, and a green check
-> or a red X. It reads its inventory, places the furnace, picks **coal** as fuel, smelts the
-> raw gold — and the harness confirms a **gold ingot**. Notice: we never *trust* the model when
-> it says it's done. The **harness checks the inventory.**"
+> **[In the page: pick **gold_ingot** from the dropdown, type `copilot/gpt-5.4` in the model box, click **▶ Start**.]**
+> "I pick the gold-ingot task, drop in the first model, and hit **Start** — the page launches
+> the run and it streams in live. Every row is one decision: a **Thought** — the model's
+> reasoning, in its own words — then one **Action**, the **Result**, and a green check or a red
+> X. It reads its inventory, places the furnace, picks **coal** as fuel, smelts the raw gold —
+> and the harness confirms a **gold ingot**. Notice: we never *trust* the model when it says
+> it's done. The **harness checks the inventory.**"
 
 ### 3c. Model B, same task — the divergence (~45s)
 
-> **[Run: `node bench.js --task gold_ingot --model copilot/gpt-4o --verbose`]**
-> "Now the *same* task, *same* tools, *same* furnace — only the **brain** changes. Read this
-> Thought column against the last one. Same starting hand, different plan: watch where it
+> **[When A finishes, change the model box to `copilot/gpt-4o`, click **▶ Start** again.]**
+> "Same task, same tools, same furnace setup — I just swap the **model** and Start again. Read
+> this Thought column against the last one. Same starting hand, different plan: watch where it
 > hesitates, re-reads its inventory, or wastes a step on a fuel that won't light. **Neither
 > model got better tools. Only the reasoning changed** — and the dashboard shows you exactly
 > *where*, line by line."
 
-> **[Optional head-to-head:
-> `node bench.js --task gold_ingot --model-a copilot/gpt-5.4 --model-b copilot/gpt-4o`]**
-> "Run them at once — two bots, one world — and the harness prints the side-by-side and **picks
-> a winner**: success first, then efficiency — fewer steps, fewer errors."
+> **[Scroll to the **Leaderboard** / **Task × Model** matrix — both runs are now there.]**
+> "And because every run is saved, both models are now sitting on the **leaderboard**, same
+> task, side by side — success and score — with the better reasoner on top. *(Heads-up: a
+> simultaneous two-bots-one-world race is on the roadmap; today we run them back-to-back and
+> compare on the board.)*"
 
 ---
 
 ## 4. What it's for — reading the result (~30s)
 
-> **[Two scorecards side by side / the history grid.]**
+> **[The **Leaderboard** / **Task × Model** matrix with both gold-ingot runs.]**
 > "This is the point. The reasoning we just watched is now **numbers you can rank**: success,
 > score, steps, tool-errors. And it settles the argument every agent team has:
 >
@@ -168,10 +172,10 @@ The money shot. Same task, same world, two brains — **watch them think, read t
 |------|------|--------|--------------|
 | 0:00 | Hook + the gap | Malmo (2016) → our agent → benchmark logos → a task failure | §1 — full-circle hook ("teach it → judge it"); lexical vs. reasoning; GAIA 15% vs 92%. |
 | 0:45 | Modernizing MS research | Malmo → our agent | §2 — Malmo + RL, now LLMs (2 sentences). |
-| 1:05 | Set the stage | Dashboard idle + game | "Craft a gold ingot: place furnace, pick fuel, smelt." |
-| 1:20 | **Model A live** | Dashboard + game | `--task gold_ingot --model copilot/gpt-5.4 --verbose`. |
-| 2:05 | **Model B live** | Dashboard + game | Same task, `copilot/gpt-4o` — contrast the Thought column. |
-| 2:50 | What it's for | Scorecards / history | The metric map — model vs. tools. |
+| 1:05 | Set the stage | `npm run dashboard` opens the page + game | "Control bar up top: task dropdown, model box, Start. Task = craft a gold ingot." |
+| 1:20 | **Model A live** | Dashboard control bar + game | Pick `gold_ingot`, type `copilot/gpt-5.4`, click **▶ Start**; narrate Thought→Action→Result. |
+| 2:05 | **Model B live** | Dashboard control bar + game | Swap model box to `copilot/gpt-4o`, **▶ Start** again — contrast the Thought column. |
+| 2:50 | What it's for | Leaderboard / Task×Model matrix | Both runs on the board — the metric map, model vs. tools. |
 | 3:20 | **Impact** | Slides / leaderboard | §5: why we built it · Microsoft · beyond. |
 | 4:35 | Close + ask | Leaderboard | One flag / one JSON; questions. |
 
@@ -183,48 +187,53 @@ The money shot. Same task, same world, two brains — **watch them think, read t
 ## Commands (verified)
 
 ```powershell
-# 1) Server (in minebench-server) — then OP the bots in its console
+# 1) Minecraft server (in minebench-server) — then OP the bot in its console
 java -Xms2G -Xmx2G -jar paper.jar nogui
-#   server console:  op MineBenchBot   op MineBenchBotA   op MineBenchBotB
+#   server console:  op MineBenchBot
 
-# 2) Live dashboard (in MineBench) — leave open at http://localhost:8099
-npm run dashboard:live
+# 2) Dashboard — ONE command: starts the live server AND auto-opens http://localhost:8099.
+#    Drive the whole demo from the page: pick a task, type a model, click ▶ Start / ■ Stop.
+npm run dashboard
 
-# 3) Model A live (scored) — gold ingot
-node bench.js --task gold_ingot --model copilot/gpt-5.4 --verbose
+# 3) (Alternative) Run a scored benchmark from the terminal — still streams to the page:
+npm run bench -- --task gold_ingot --model copilot/gpt-5.4 --verbose
+npm run bench -- --task gold_ingot --model copilot/gpt-4o  --verbose
 
-# 4) Model B live (scored) — same task, swap only the brain
-node bench.js --task gold_ingot --model copilot/gpt-4o --verbose
+# 4) Azure fallback (no COPILOT_TOKEN): omit --model for the default deployment
+npm run bench -- --task gold_ingot
 
-# 5) Head-to-head race -> side-by-side + winner
-node bench.js --task gold_ingot --model-a copilot/gpt-5.4 --model-b copilot/gpt-4o
-
-# 6) Azure fallback (no COPILOT_TOKEN): omit --model for the default deployment
-node bench.js --task gold_ingot
+# 5) Rebuild the static history page (offline fallback view)
+npm run dashboard:build   # then open dashboard/index.html
 ```
 
-> `copilot/<model>` needs `COPILOT_TOKEN` in `.env`; a bare `--model <name>` uses the Azure
-> deployment from `AZURE_OPENAI_*`. Swap the two model names for whichever pair shows the
-> clearest reasoning gap on the day.
+> **Model names:** to use a GitHub Copilot model, prefix it — `copilot/gpt-5.4`, `copilot/gpt-4o`
+> (needs `COPILOT_TOKEN` in `.env`). Bare `gpt-*` names resolve to the **Azure** deployment from
+> `AZURE_OPENAI_*`; `claude*`/`gemini*`/`o3*`… auto-route to Copilot without the prefix. Leave the
+> model box **blank** for the default Azure deployment. Swap the two model names for whichever
+> pair shows the clearest reasoning gap on the day.
+>
+> **UI note:** the launch-from-page controls and the single `npm run dashboard` command land
+> with Ivan's `ui` branch — make sure it's merged before recording. (Pre-`ui`, start the live
+> server with `npm run dashboard:live` and launch runs from a terminal.)
 
 ---
 
 ## Pre-flight (T-30, don't skip)
 
-- [ ] Server up; bots **OP'd** (`op MineBenchBot` / `…BotA` / `…BotB`) or task setup is silently ignored.
+- [ ] Server up; bot **OP'd** (`op MineBenchBot`) or task setup (teleport/give) is silently ignored.
 - [ ] `spigot.yml` anti-cheat loosened (`moved-too-quickly-multiplier: 100.0`) so the bot isn't kicked mid-place.
 - [ ] `difficulty=peaceful` so nothing kills the bot on camera.
-- [ ] `COPILOT_TOKEN` in `.env` (or fall back to Azure — command 6).
-- [ ] Dashboard open at `localhost:8099` ("waiting for a run…").
-- [ ] **Warm run:** run the gold-ingot commands once ~30 min before — saved `results/*.json` populate the dashboard history and double as your fallback.
-- [ ] Terminal font ≥ 18pt so the `--verbose` Thought/Action lines are readable on video.
+- [ ] `COPILOT_TOKEN` in `.env` for the `copilot/*` models (or leave the model box blank → Azure default).
+- [ ] `npm run dashboard` running — the page auto-opens at `localhost:8099` and shows the control bar.
+- [ ] **Warm run:** run the gold-ingot models once ~30 min before — saved `results/*.json` populate the dashboard leaderboard and double as your fallback.
+- [ ] On-screen text ≥ 18pt so the **Thought** column reads on video.
 
 ## Fallbacks
 
-- **`copilot/*` won't auth:** run on Azure (command 6); for A/B use two Azure deployments via `--model-a/--model-b`.
-- **Network/LLM down:** open the static dashboard (`npm run dashboard` → `dashboard/index.html`) and walk the warm-run scorecards. Say plainly: *"captured 20 minutes ago — same command you'd run now."*
+- **`copilot/*` won't auth:** leave the model box blank (or type a bare `gpt-*` name) to run on the **Azure** default deployment; compare two Azure deployments back-to-back on the leaderboard.
+- **Network/LLM down:** rebuild the static page (`npm run dashboard:build` → open `dashboard/index.html`) and walk the warm-run leaderboard. Say plainly: *"captured 20 minutes ago — same run you'd start now."*
 - **Bot gets stuck on camera:** that's *content* — "watch the failed steps and tool_errors climb; a weaker model does this more. It's a measurable signal, not a vibe." Then cut to a warm run.
-- **Golden rule:** never debug live. If anything hangs >10s, narrate the fallback and move on.
+- **Golden rule:** never debug live. If anything hangs >10s, hit **■ Stop**, narrate the fallback, and move on.
 
 ## Q&A prep
 
@@ -232,6 +241,40 @@ node bench.js --task gold_ingot
 - **"Reproducible, in *Minecraft*?"** Each task pins gamerules, time, weather, spawn, and starting inventory (`harness/env.js`). Success is a declarative inventory check (`scoring/scorer.js`), never the model's self-report — and fresh state per run makes it contamination-resistant.
 - **"What if your tools are just bad?"** Then *every* model fails identically and the card says so — that's a finding. The A/B isolates tools from brain.
 - **"How fast to add a model or task?"** A model is one flag (`--model copilot/<x>`); a task is one JSON file in `tasks/`. That swappability is the whole point.
+
+---
+
+## Production & format — Microsoft / Minecraft Live style
+
+**Yes — model it on the official Microsoft / Minecraft Live "First Look" videos:** high energy,
+presenter-led, and **cut back and forth between real life and the game.** That format fits us
+perfectly, because our story *is* a human explaining a stake (real life) and a machine proving
+it (the game + dashboard).
+
+**The intercut pattern (real life ⇄ screen):**
+- **Real life (presenter on camera):** the thesis beats — the hook (§1), the eval-gap, and the
+  whole impact section (§5). These are *ideas*; a face selling them lands harder than a screen.
+- **Screen capture (game + dashboard):** the demo (§3) and the leaderboard (§4). Let the live
+  run breathe — full-screen the dashboard's **Thought** column at the key moments.
+- **Cut on beats, not on time:** presenter says *"watch it fall apart"* → hard cut to the bot
+  failing. Presenter says *"only the brain changed"* → cut to the two Thought columns. The edit
+  should feel like the game is *answering* the presenter.
+
+**Polish borrowed from the official videos:**
+- **Cold open** with archival Project Malmo (2016) footage → smash cut to our agent today. Title
+  card on the MineBench reveal.
+- **On-screen stat cards** for the punchy numbers so they register without being read aloud
+  slowly: `GPT-4: 15%  ·  Human: 92%` (GAIA); `WebArena — GPT-4 14% vs Human 78%`.
+- **Lower-thirds** for the presenter's name/role and for each model name during the runs.
+- **Picture-in-picture** during the live run: small presenter cam in the corner reacting while
+  the dashboard fills — classic Minecraft-Live energy.
+- **Captions/subtitles** throughout (accessibility + most people watch muted).
+- Upbeat but unobtrusive music bed under the talking beats; **drop the music out** for a second
+  on the gold-ingot success so the moment pops.
+
+**One caution (keep our credibility):** don't over-produce the *actual run.* The proof is that
+it's real and unscripted — the model thinking in real time, sometimes stumbling. Use Microsoft-
+grade polish for the *framing* (intro, stats, impact); keep the demo itself raw and live.
 
 ---
 
