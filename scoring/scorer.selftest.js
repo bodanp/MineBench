@@ -10,7 +10,7 @@ const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
 const { score } = require('./scorer')
-const { getMilestones, deriveFromRecipes } = require('./milestones')
+const { getMilestones, validateMilestones } = require('./milestones')
 
 const loadTask = (id) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tasks', `${id}.json`), 'utf8'))
 let passed = 0
@@ -102,21 +102,39 @@ ok('adaptation rewards changing strategy, punishes looping', () => {
   assert.strictEqual(loop.capabilities.adaptation, 0, 'repeated the failing action')
 })
 
-// 7. Milestone chains exist for the crafted tasks and end at the goal item.
-ok('milestone chains are defined and end at the goal', () => {
+// 7. Each shipped task defines a well-formed milestone DAG that ends at the goal.
+ok('task milestone DAGs are valid and end at the goal', () => {
+  const goalOf = { stone_pickaxe: 'stone_pickaxe', iron_pickaxe: 'iron_pickaxe', gather_wood: 'oak_log' }
+  const matchesGoal = (node, item) =>
+    (node.item === item) || (node.any && node.any.includes(item)) || (node.suffix && item.endsWith(node.suffix))
   for (const id of ['stone_pickaxe', 'iron_pickaxe', 'gather_wood']) {
-    const ms = getMilestones(loadTask(id))
+    const task = loadTask(id)
+    assert.deepStrictEqual(validateMilestones(task), [], `${id} milestones are well-formed`)
+    const ms = getMilestones(task)
     assert.ok(ms.length >= 1, `${id} has milestones`)
+    assert.ok(matchesGoal(ms[ms.length - 1], goalOf[id]), `${id} chain ends at ${goalOf[id]}`)
   }
 })
 
-// 8. A NEW task (no built-in chain, no manual milestones) auto-derives milestones from the recipe
-//    graph — so adding tasks needs no hand-authoring. Cycle-prone goals must not blow the stack.
-ok('milestones auto-derive for new tasks (no manual authoring)', () => {
-  const chest = getMilestones({ id: 'chest', success: { inventory: { chest: 1 } } })
-  assert.ok(chest.length >= 2, `chest auto-derived a chain, got ${chest.length}`)
-  const iron = deriveFromRecipes('iron_pickaxe', 1)   // recipe cycles must terminate, not throw
-  assert.ok(Array.isArray(iron) && iron.length >= 1, 'cycle-prone goal derives without crashing')
+// 8. Milestones are TASK-DEFINED only: a task with no `milestones` array yields an empty chain, so
+//    completion is null but the four milestone-free dimensions still score the run.
+ok('tasks own their milestones; none declared -> empty chain, still scored', () => {
+  const task = { id: 'x', success: { inventory: { chest: 1 } } }
+  assert.deepStrictEqual(getMilestones(task), [], 'no auto-derivation')
+  const c = score(trace('m', 'max_steps', [
+    ['craft', { item: 'chest' }, false, { oak_planks: 2 }]
+  ], { oak_planks: 2 }), task)
+  assert.strictEqual(c.capabilities.completion, null, 'no milestones -> completion null')
+  assert.strictEqual(c.progress, null, 'no milestones -> progress null')
+  assert.ok(c.capabilities.tool_use != null, 'behaviour dimensions still scored')
+})
+
+// 9. validateMilestones flags the mistakes a task author can make (dangling dep, duplicate id).
+ok('validateMilestones catches dangling deps and duplicate ids', () => {
+  const dangling = validateMilestones({ milestones: [{ id: 'a', item: 'x', deps: ['ghost'] }] })
+  assert.ok(dangling.some(e => /unknown id "ghost"/.test(e)), 'reports dangling dep')
+  const dup = validateMilestones({ milestones: [{ id: 'a', item: 'x' }, { id: 'a', item: 'y' }] })
+  assert.ok(dup.some(e => /duplicate milestone id/.test(e)), 'reports duplicate id')
 })
 
 console.log(`\n${passed} checks passed.`)

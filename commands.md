@@ -22,6 +22,12 @@ Opens two bot windows (one per model), then prints a side-by-side comparison.
 node bench.js --task gather_wood --model-a copilot/gpt-5.4 --model-b copilot/gpt-4o
 ```
 
+## Give players infinite night vision
+Run in the server console (or as an op'd player) to grant night vision that never expires.
+```bash
+/effect give @s night_vision infinite 0 true
+```
+
 ## Other
 ```bash
 node bot/bot.js              # smoke test: connect + walk 30s (npm run smoke)

@@ -1,5 +1,10 @@
 # MineBench — Team Scope & Delegation Plan
 
+> ⚠️ **DEPRECATED — historical snapshot, not maintained.** This was the initial team
+> scope/delegation plan. Some details (especially scoring & milestones) no longer match the
+> code. For an up-to-date description of how each system actually works, see **`context.md`**
+> (the living document). Kept only for historical reference of the original role split.
+
 > A reproducible Minecraft benchmark for agentic AI. Plug in an LLM/agent, run it
 > through standardized Minecraft tasks, get a comparable scorecard.
 

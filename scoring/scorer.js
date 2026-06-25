@@ -80,14 +80,34 @@ function mergeMax(into, snap) {
   return into
 }
 
-// Index of the milestone an action is trying to ACHIEVE (craft/smelt of a chain item), or -1.
-function targetMilestoneIndex(action, milestones) {
-  if (!action) return -1
+// The milestone NODE an action is trying to ACHIEVE (craft/smelt of a chain item), or null.
+function targetMilestoneNode(action, milestones) {
+  if (!action) return null
   let item = null
   if (action.tool === 'craft') item = action.args && action.args.item
   else if (action.tool === 'smelt') item = (action.args && (action.args.output || action.args.result)) || 'iron_ingot'
-  if (!item) return -1
-  return milestones.findIndex(m => matchesItem(item, m))
+  if (!item) return null
+  return milestones.find(m => matchesItem(item, m)) || null
+}
+
+// BACKWARD ENTAILMENT: reaching a node entails all of its prerequisites (you cannot hold a stone
+// pickaxe without having had sticks, cobblestone and table access). Seed `achieved` from possession
+// (max-ever-held >= count), then propagate each achieved node's credit up to its transitive deps.
+// This is what makes credit independent of which valid path the run took, and what lets a tool node
+// (crafting_table / furnace) score even though the agent satisfied it with a world block.
+function achievedSet(milestones, held) {
+  const byId = new Map(milestones.map(m => [m.id, m]))
+  const achieved = new Set(milestones.filter(m => reachedCount(held, m) >= m.count).map(m => m.id))
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const id of [...achieved]) {
+      for (const dep of (byId.get(id).deps || [])) {
+        if (byId.has(dep) && !achieved.has(dep)) { achieved.add(dep); changed = true }
+      }
+    }
+  }
+  return achieved
 }
 
 function score(trace, task) {
@@ -102,12 +122,16 @@ function score(trace, task) {
   const maxHeld = {}
   for (const snap of snapshots) mergeMax(maxHeld, snap)
 
-  // ---- milestone progress (completion) ------------------------------------------------------
-  const mList = milestones.map(m => ({ label: m.label, reached: reachedCount(maxHeld, m) >= m.count }))
+  // ---- milestone progress (completion) — graph achievement with backward entailment ---------
+  const milestoneById = new Map(milestones.map(m => [m.id, m]))
+  const achievedFinal = achievedSet(milestones, maxHeld)
+  const mList = milestones.map(m => ({ label: m.label, reached: achievedFinal.has(m.id) }))
   const reached = mList.filter(m => m.reached).length
   const total = milestones.length || 1
   const completion = milestones.length ? reached / total : null
-  const goalReached = milestones.length ? mList[mList.length - 1].reached : false
+  // Goal = the node nothing depends on (last in topo order); achieved only by really holding it.
+  const goalNode = milestones.length ? milestones[milestones.length - 1] : null
+  const goalReached = goalNode ? reachedCount(maxHeld, goalNode) >= goalNode.count : false
 
   const success = trace.ended_reason === 'success' ||
     checkSuccess(trace.final_state || { inventory: {} }, task) || goalReached
@@ -187,11 +211,17 @@ function score(trace, task) {
       else { agentErrors++; agentFailures++ }
     }
 
-    // ----- planning: attempting a chain milestone before its prerequisites are met -----
-    const ti = targetMilestoneIndex(s.action, milestones)
-    if (ti >= 0) {
+    // ----- planning: attempting a chain milestone before its ACTUAL prerequisites are met -----
+    // We check the node's direct DAG parents (not "every earlier step"), so legal reorderings are
+    // not punished. Tool parents (crafting_table / furnace) are excluded — their availability is
+    // proven by whether the dependent action succeeds, not by an inventory snapshot.
+    const targetNode = targetMilestoneNode(s.action, milestones)
+    if (targetNode) {
       planAttempts++
-      const prereqsMet = milestones.slice(0, ti).every(m => reachedCount(runMax, m) >= m.count)
+      const prereqsMet = (targetNode.deps || []).every(did => {
+        const dep = milestoneById.get(did)
+        return !dep || dep.tool || reachedCount(runMax, dep) >= dep.count
+      })
       if (!prereqsMet) prematureAttempts++
     }
 
