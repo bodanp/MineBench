@@ -180,7 +180,7 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'attack_entity',
-      description: 'Attack and kill the nearest mob/entity of a given type to get its drops (e.g. a "chicken" for feathers + raw_chicken, a "cow" for leather + beef, a "sheep" for wool, or a hostile mob in your way). Use look_around to see which entities are nearby, then call this with the entity_type — the bot walks to the nearest one, auto-equips your best weapon (sword/axe) if you have one, swings until it dies, then collects the drops and reports the VERIFIED items gained. Players are never targeted.',
+      description: 'Attack and kill the nearest mob/entity of a given type to get its drops. Use look_around to see which entities are nearby, then call this with the entity_type — the bot walks to the nearest one, swings with whatever it has equipped until it dies, then collects the drops and reports the VERIFIED items gained. Players are never targeted.',
       parameters: {
         type: 'object',
         properties: {
@@ -194,7 +194,7 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'attack_player',
-      description: 'Attack and kill another PLAYER (e.g. an opposing bot named "MineBenchBotB") by their exact username. Uses the same combat as attack_entity: walks to that player, auto-equips your best weapon (sword/axe) if you have one, and swings until they die. Use this only when your goal explicitly tells you to kill a named player — never the human or yourself.',
+      description: 'Attack and kill another PLAYER by their exact username. Uses the same combat as attack_entity: walks to that player and swings with whatever it has equipped until they die. Never the human or yourself.',
       parameters: {
         type: 'object',
         properties: {
@@ -587,9 +587,7 @@ const TOOL_IMPLS = {
       return `No ${name} found nearby. Use look_around to check what entities are around first.`
     }
 
-    // Hold the best weapon we own (sword > axe) so it dies in fewer swings — bare hands still
-    // work for weak mobs. Then walk to the mob and swing until it dies.
-    const weaponNote = await equipBestWeapon(bot)
+    // Walk to the mob and swing with whatever you have equipped until it dies.
     const before = readInventory(bot)
     const result = await attackUntilDead(bot, target)
     if (!result.killed) {
@@ -602,8 +600,8 @@ const TOOL_IMPLS = {
     const gained = invGain(before, readInventory(bot))
     const gainedStr = Object.entries(gained).map(([n, c]) => `${c}x ${n}`).join(', ')
     return gainedStr
-      ? `Killed ${name}; collected ${gainedStr}.${weaponNote}`
-      : `Killed ${name} but no drops were collected (they may have despawned or fallen out of reach).${weaponNote}`
+      ? `Killed ${name}; collected ${gainedStr}.`
+      : `Killed ${name} but no drops were collected (they may have despawned or fallen out of reach).`
   },
 
   async attack_player(bot, { username }) {
@@ -620,11 +618,10 @@ const TOOL_IMPLS = {
       return `Player ${username} is not currently visible. Check "nearby_players" in your observation (or call look_around) for their coordinates, move_to them, then try again.`
     }
 
-    // Same combat path as attack_entity: hold the best weapon, then chase + swing until dead.
-    const weaponNote = await equipBestWeapon(bot)
+    // Same combat path as attack_entity: chase + swing with whatever you have equipped until dead.
     const result = await attackUntilDead(bot, target)
     return result.killed
-      ? `Killed ${username}.${weaponNote}`
+      ? `Killed ${username}.`
       : `Could not kill ${username}: ${result.reason}. Move_to closer and try again.`
   },
 
@@ -869,38 +866,6 @@ function entityMatches(entity, name) {
     .filter(Boolean)
     .map(s => String(s).toLowerCase().replace(/\s+/g, '_'))
   return candidates.some(c => c === name) || candidates.some(c => c.includes(name))
-}
-
-// Equip the strongest melee weapon we own before a fight (sword beats axe beats fists).
-// Best-effort: returns a short note for the result string, never throws — bare-handed is
-// a perfectly valid fallback for weak mobs like chickens.
-async function equipBestWeapon(bot) {
-  const rank = (n) => {
-    if (/_sword$/.test(n)) return 6 + materialRank(n)
-    if (/_axe$/.test(n)) return 1 + materialRank(n)
-    return 0
-  }
-  const weapon = bot.inventory.items()
-    .filter(i => rank(i.name) > 0)
-    .sort((a, b) => rank(b.name) - rank(a.name))[0]
-  if (!weapon) return ''
-  if (bot.heldItem?.type === weapon.type) return ` (used ${weapon.name})`
-  try {
-    await equipAndConfirm(bot, weapon)
-    return ` (equipped ${weapon.name})`
-  } catch (_) {
-    return ''
-  }
-}
-
-// Cheap material tiebreaker so a diamond sword outranks a wooden one.
-function materialRank(n) {
-  if (n.startsWith('netherite_')) return 5
-  if (n.startsWith('diamond_')) return 4
-  if (n.startsWith('iron_')) return 3
-  if (n.startsWith('stone_')) return 2
-  if (n.startsWith('golden_')) return 1
-  return 0   // wood
 }
 
 // Chase a single entity into melee range and swing until it dies (or we time out / lose it).
