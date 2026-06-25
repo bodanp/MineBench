@@ -179,6 +179,20 @@ part (pathfinder occasionally traps the agent). Point at it: *"This is exactly w
 benchmark surfaces — watch the failed steps and `tool_errors` climb. A weaker model does
 this more; it's a measurable signal, not a vibe."* Then cut to a warm run in history.
 
+**Plan E — the two dual-mode windows don't open** (locked-down / headless box where
+`cmd start` is blocked): launch the two bots **by hand** with the same identity the dual
+controller injects — same world, same dashboard, two live panels:
+```powershell
+# Terminal 1 (bot A)
+$env:MINEBENCH_LIVE_SESSION='dual-demo'; $env:MINEBENCH_LIVE_SLOT='A'; $env:MC_BOT_USERNAME='MineBenchBotA'
+node bench.js --task gather_wood --model gpt-4.1-mini --verbose
+# Terminal 2 (bot B) — SAME session string, slot B
+$env:MINEBENCH_LIVE_SESSION='dual-demo'; $env:MINEBENCH_LIVE_SLOT='B'; $env:MC_BOT_USERNAME='MineBenchBotB'
+node bench.js --task gather_wood --model gpt-4.1-mini --verbose
+```
+Both must share the **same** `MINEBENCH_LIVE_SESSION` so the dashboard groups them into one
+side-by-side comparison (a different/missing session resets the panel). Op the B bot too.
+
 **Golden rule:** never debug live. If anything hangs >10s, narrate the fallback and move on.
 
 ---
