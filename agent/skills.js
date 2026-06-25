@@ -179,6 +179,20 @@ const TOOL_SCHEMAS = [
   {
     type: 'function',
     function: {
+      name: 'attack_entity',
+      description: 'Attack and kill the nearest mob/entity of a given type to get its drops (e.g. a "chicken" for feathers + raw_chicken, a "cow" for leather + beef, a "sheep" for wool, or a hostile mob in your way). Use look_around to see which entities are nearby, then call this with the entity_type — the bot walks to the nearest one, auto-equips your best weapon (sword/axe) if you have one, swings until it dies, then collects the drops and reports the VERIFIED items gained. Players are never targeted.',
+      parameters: {
+        type: 'object',
+        properties: {
+          entity_type: { type: 'string', description: 'The mob/entity type to attack (lowercase name, e.g. "chicken", "cow", "sheep", "pig", "zombie").' }
+        },
+        required: ['entity_type']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'look_around',
       description: 'Scan surroundings: returns nearby blocks and entities within a cube of the given radius (default 8 blocks). Returns "nearby_blocks" (total counts per block type — how abundant each is) AND "block_coords" (up to the 3 NEAREST [x,y,z] coordinates per block type, sorted closest-first). Every coordinate in "block_coords" is guaranteed to be that exact block type, so pick the first (closest) one and move_to(x,y,z) or mine_block(block_type, x, y, z) it directly. If a first scan does not reveal what you need, call it again with a LARGER radius to search farther out.',
       parameters: {
@@ -547,6 +561,37 @@ const TOOL_IMPLS = {
     }
   },
 
+  async attack_entity(bot, { entity_type }) {
+    const name = normalizeName(entity_type)
+
+    // Find the NEAREST live mob of this type. Players and item-drops are never valid targets.
+    const target = Object.values(bot.entities)
+      .filter(e => e !== bot.entity && e.isValid && e.position && e.type !== 'player'
+        && e.name !== 'item' && entityMatches(e, name))
+      .sort((a, b) => bot.entity.position.distanceTo(a.position) - bot.entity.position.distanceTo(b.position))[0]
+    if (!target) {
+      return `No ${name} found nearby. Use look_around to check what entities are around first.`
+    }
+
+    // Hold the best weapon we own (sword > axe) so it dies in fewer swings — bare hands still
+    // work for weak mobs. Then walk to the mob and swing until it dies.
+    const weaponNote = await equipBestWeapon(bot)
+    const before = readInventory(bot)
+    const result = await attackUntilDead(bot, target)
+    if (!result.killed) {
+      return `Could not kill the ${name}: ${result.reason}. Move_to closer and try again.`
+    }
+
+    // Collect the drops at the death spot and report the VERIFIED inventory gain.
+    await collectNearbyDrops(bot, result.pos)
+    await settleInventory(bot, before)
+    const gained = invGain(before, readInventory(bot))
+    const gainedStr = Object.entries(gained).map(([n, c]) => `${c}x ${n}`).join(', ')
+    return gainedStr
+      ? `Killed ${name}; collected ${gainedStr}.${weaponNote}`
+      : `Killed ${name} but no drops were collected (they may have despawned or fallen out of reach).${weaponNote}`
+  },
+
   async look_around(bot, { radius } = {}) {
     const nearbyBlocks = {}
     // Per-block-name list of world coordinates the model can pick from to move_to/mine a
@@ -763,6 +808,86 @@ async function collectNearbyDrops(bot, pos) {
     await navigate(bot, new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1), drop.position)
   } catch (_) { /* best-effort pickup */ }
 }
+
+// Does a live entity match the type the model asked for? Mineflayer names mobs by their
+// lowercase id ("chicken", "cow", "zombie"); we also tolerate a displayName match and a
+// loose substring so e.g. "zombie" still finds "zombie_villager".
+function entityMatches(entity, name) {
+  const candidates = [entity.name, entity.displayName, entity.kind]
+    .filter(Boolean)
+    .map(s => String(s).toLowerCase().replace(/\s+/g, '_'))
+  return candidates.some(c => c === name) || candidates.some(c => c.includes(name))
+}
+
+// Equip the strongest melee weapon we own before a fight (sword beats axe beats fists).
+// Best-effort: returns a short note for the result string, never throws — bare-handed is
+// a perfectly valid fallback for weak mobs like chickens.
+async function equipBestWeapon(bot) {
+  const rank = (n) => {
+    if (/_sword$/.test(n)) return 6 + materialRank(n)
+    if (/_axe$/.test(n)) return 1 + materialRank(n)
+    return 0
+  }
+  const weapon = bot.inventory.items()
+    .filter(i => rank(i.name) > 0)
+    .sort((a, b) => rank(b.name) - rank(a.name))[0]
+  if (!weapon) return ''
+  if (bot.heldItem?.type === weapon.type) return ` (used ${weapon.name})`
+  try {
+    await equipAndConfirm(bot, weapon)
+    return ` (equipped ${weapon.name})`
+  } catch (_) {
+    return ''
+  }
+}
+
+// Cheap material tiebreaker so a diamond sword outranks a wooden one.
+function materialRank(n) {
+  if (n.startsWith('netherite_')) return 5
+  if (n.startsWith('diamond_')) return 4
+  if (n.startsWith('iron_')) return 3
+  if (n.startsWith('stone_')) return 2
+  if (n.startsWith('golden_')) return 1
+  return 0   // wood
+}
+
+// Chase a single entity into melee range and swing until it dies (or we time out / lose it).
+// Returns { killed: true, pos } with the death location for drop collection, or
+// { killed: false, reason } when we can't close the gap before the time cap.
+async function attackUntilDead(bot, target) {
+  const REACH = 3.5
+  const deadline = Date.now() + 30000
+  let lastPos = target.position.clone()
+  while (target.isValid && Date.now() < deadline) {
+    lastPos = target.position.clone()
+    const dist = bot.entity.position.distanceTo(target.position)
+    if (dist > REACH) {
+      // Walk toward where the mob currently is. A short per-leg cap keeps us re-pathing as it
+      // wanders instead of committing to one stale path for the full timeout.
+      try {
+        await navigate(bot, new goals.GoalNear(target.position.x, target.position.y, target.position.z, 2), target.position)
+      } catch (_) { /* it moved or we stalled — re-evaluate and try again */ }
+      if (!target.isValid) break
+      if (bot.entity.position.distanceTo(target.position) > REACH + 2) {
+        // Still can't get near it after a path attempt; nudge forward once before giving up.
+        try { await faceXZ(bot, target.position) } catch (_) {}
+        await walkForwardHopping(bot, 800)
+        if (bot.entity.position.distanceTo(target.position) > REACH + 2) {
+          return { killed: false, reason: 'could not get within melee range' }
+        }
+      }
+      continue
+    }
+    // In range: face it and swing. Pace swings to the ~0.6s attack cooldown so each hit
+    // lands at full damage instead of being throttled by the server.
+    try { await bot.lookAt(target.position.offset(0, target.height ? target.height * 0.5 : 0.5, 0), true) } catch (_) {}
+    try { bot.attack(target) } catch (_) {}
+    await sleep(620)
+  }
+  if (!target.isValid) return { killed: true, pos: lastPos }
+  return { killed: false, reason: 'ran out of time' }
+}
+
 
 // One shared, reusable Movements config (recreating it on every call is wasteful).
 function getMovements(bot) {

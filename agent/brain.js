@@ -30,6 +30,7 @@ Available tools:
 - craft(item, count): craft an item; some recipes require a crafting_table placed within ~8 blocks
 - smelt(input, fuel, count): smelt items in the nearest furnace using the fuel you name; waits, collects the output, and reports what actually came out
 - equip(item): hold an item (equip a pickaxe before mining stone/ore)
+- attack_entity(entity_type): walk to the nearest mob of that type and kill it to get its drops (e.g. attack_entity("chicken") for feathers + raw_chicken, attack_entity("cow") for leather + beef). Check look_around's "entities" to see what's nearby. Auto-equips your best weapon and collects the drops; reports the items you actually gained. Use this whenever your goal needs something a mob drops, or to clear a hostile mob in your way.
 - turn(direction), jump(), chat(message)
 - stop(): end the task. Call ONLY when the goal is fully complete. KEEP FUCKING TRYING. NEVER BACK DOWN NEVER GIVE UP.
 
