@@ -158,6 +158,19 @@ Conventions & gotchas:
   `mineflayer-pathfinder` (the chosen library — `mineflayer-navigate` and
   `mineflayer-movement` were evaluated and rejected; don't re-investigate). The real issue is
   pathfinder occasionally getting stuck, not the library choice.
+- **Vertical climbs**: pathfinder's 1x1 tower-building is disabled (`allow1by1towers = false`
+  in `getMovements`) because its apex-placement timing is unreliable (the bot bounces ~10
+  times before a block lands). Digging is left ON, so for a higher target pathfinder normally
+  carves a diagonal staircase up — this is the preferred default because it needs no building
+  materials and so can't hit the "build up → run out of blocks → dig back down → loop" failure
+  mode. `place_block` pillaring is reserved for the cases where it's genuinely the only option:
+  when there is no walkable or diggable route up (a target floating in air, or a sheer column),
+  `move_to` ends up directly under the target but below it, and returns a factual vertical-gap
+  report (`verticalGapReport`). The model then decides how to gain the height (e.g. pillar up
+  via `place_block(block, 0, 0, 0)`, which uses the proven `pillarUp` path, choosing whichever
+  block it can spare). The report names no tool and suggests no action by design (the model's
+  judgment is what's under test); it states the height gap and that no route up exists so the
+  model can judge whether it has the materials to build up before committing.
 - **Known bug**: the `craft` tool can wrongly report a crafting table is "not near me" even
   when one is adjacent (`dist≈0.9`, exposed). The fault is in the craft tool's
   nearby-table detection (search radius / position matching), not pathfinder.

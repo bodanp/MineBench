@@ -244,9 +244,10 @@ const TOOL_IMPLS = {
   async move_to(bot, { x, y, z }) {
     try {
       await navigate(bot, new goals.GoalNear(x, y, z, 1), { x, y, z })
-      return `Reached ${formatPos(bot.entity.position)}`
+      return verticalGapReport(bot, { x, y, z }) || `Reached ${formatPos(bot.entity.position)}`
     } catch (e) {
-      return `Failed to reach (${x},${y},${z}): ${e.message}`
+      return verticalGapReport(bot, { x, y, z })
+        || `Failed to reach (${x},${y},${z}): ${e.message}`
     }
   },
 
@@ -715,6 +716,21 @@ function formatPos(p) {
   return `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`
 }
 
+// After a move_to attempt, detect the case where the bot is standing essentially underneath
+// the target but still below it in Y — i.e. the only thing left between it and the goal is
+// height it can't walk up to (pathfinder no longer builds towers). Returns a FACTUAL state
+// report (no tool names, no suggested actions) so the model decides how to gain the height.
+// Returns null when there's no such vertical-only gap (then the caller's normal message wins).
+function verticalGapReport(bot, target) {
+  const p = bot.entity.position
+  const dy = Math.floor(target.y) - Math.floor(p.y)
+  const xzDist = Math.hypot(target.x - p.x, target.z - p.z)
+  if (dy >= 1 && xzDist <= 2.5) {
+    return `At ${formatPos(p)}. Target (${target.x}, ${target.y}, ${target.z}) is ${dy} block(s) higher and there is no walkable or diggable route up to it from here.`
+  }
+  return null
+}
+
 // Ensure the bot is holding a tool that will actually drop `block`. Blocks like stone and
 // ores expose `harvestTools` (the set of items that yield a drop); breaking them with the
 // wrong tool or a bare hand destroys the block for nothing.
@@ -770,6 +786,11 @@ function getMovements(bot) {
     const mcData = require('minecraft-data')(bot.version)
     bot._mbMovements = new Movements(bot, mcData)
     bot._mbMovements.diagonalCost = 1.8
+    // Don't let pathfinder build 1x1 towers to gain height: its apex-placement timing is
+    // unreliable (the bot bounces ~10 times before a block lands). move_to instead reports
+    // the remaining vertical gap and leaves the climb to the model (which can pillar up via
+    // place_block, choosing a block it can spare).
+    bot._mbMovements.allow1by1towers = false
   }
   return bot._mbMovements
 }

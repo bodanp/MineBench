@@ -1,0 +1,16 @@
+{
+  "id": "gold_ingot",
+  "title": "Make a gold ingot from scratch",
+  "goal": "Make a gold_ingot from scratch.",
+  "difficulty": 6,
+  "max_steps": 160,
+  "rationale": "Longest-horizon test: gather wood, craft planks/sticks/table, wooden then stone then iron pickaxe (gold ore only drops with an iron-or-better pickaxe), build a furnace, mine deep to find gold ore, then smelt raw gold into a gold ingot. Tests the full tool-tier dependency chain, deep mining/navigation, and smelting.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": { "inventory": { "gold_ingot": 1 } }
+}
