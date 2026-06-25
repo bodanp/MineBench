@@ -48,7 +48,8 @@ harness/            # the benchmark spine
   runner.js         # run(task, model) -> Trace; owns the step loop + Trace schema
   env.js            # applies task.setup to the world for determinism (gamerules/tp/give)
 scoring/            # turns runs into comparable results
-  scorer.js         # checkSuccess() + score() -> Scorecard
+  scorer.js         # checkSuccess() + score() -> Scorecard (capability profile)
+  milestones.js     # per-task progress DAG: getMilestones()/validateMilestones()
   store.js          # persist results/*.json + aggregate comparison table
 tasks/              # the task suite as data (*.json)
 results/            # one saved {scorecard, trace} JSON per run (output)
@@ -62,14 +63,19 @@ docs/team-plan.md   # team scope, role ownership, and design rationale
 Changing any of these affects multiple systems — update every dependent section.
 
 - **Task schema** (`tasks/*.json`): `{ id, title, goal, difficulty, max_steps, rationale,
-  setup, success }`. `setup` = `{ gamerules, time, weather, teleport, give, clear_inventory }`.
-  `success` (v1) = `{ inventory: { "<item>": <minCount> } }`.
+  setup, success, milestones? }`. `setup` = `{ gamerules, time, weather, teleport, give,
+  clear_inventory }`. `success` (v1) = `{ inventory: { "<item>": <minCount> } }`. `milestones`
+  (optional) = a partial-credit dependency DAG; see Scoring.
 - **Trace schema** (emitted by `harness/runner.js`): `{ task_id, model, started_at,
   ended_reason, duration_s, final_state, steps: [{ i, observation, thought, action, result,
   ok, pos }] }`. `ended_reason` ∈ `success | max_steps | agent_stop | no_tool_call |
   disconnected | llm_error | error`.
-- **Scorecard schema** (produced by `scoring/scorer.js`): `{ task_id, model, success, steps,
-  duration_s, tool_calls, tool_errors, repeated_actions, stuck_events, ended_reason, score }`.
+- **Scorecard schema** (produced by `scoring/scorer.js`): a capability PROFILE, not one scalar —
+  `{ task_id, model, success, score, progress, milestones: { reached, total, list }, capabilities:
+  { completion, planning, tool_use, adaptation, robustness, efficiency }, diagnostics: {...} }`
+  plus legacy fields (`steps, tool_calls, tool_errors, repeated_actions, stuck_events,
+  duration_s, ended_reason`) the dashboard/older tooling still read. Each capability is `0..1` or
+  `null` when the run never exercised it (excluded from averages, never scored `0`).
 - **Model interface**: `complete({ messages, tools }) -> assistantMessage`.
 - **Skills interface**: `TOOL_SCHEMAS` (array) + `executeAction(bot, { tool, args }) ->
   { result, ok, done }`.
@@ -176,12 +182,39 @@ assistantMessage`) so mini/4.1/4o and other providers can be compared.
   integration headers. Reuses `callWithRetry`.
 Both adapters set `parallel_tool_calls: false` to match the one-action-per-step loop.
 
-### Scoring — `scoring/scorer.js`
-`checkSuccess(state, task)` evaluates the declarative success DSL (v1: `inventory` minimums) —
-keep it declarative so task authors never write engine code; extend here for new success types
-(placed/reach/etc.). `score(trace, task)` produces the Scorecard: success is primary, and an
-efficiency-weighted formula rewards fewer steps/errors/repeats
-(`1 - 0.3*steps/max - 0.1*errnorm - 0.1*repeatnorm`, clamped to [0,1]; `0` if unsuccessful).
+### Scoring — `scoring/scorer.js` + `scoring/milestones.js`
+MineBench is a proxy for GENERAL agentic capability (Minecraft is just the instrument), so a run is
+NOT collapsed to one "A beats B" scalar. `score(trace, task)` emits a **capability profile** — six
+deterministic dimensions, each `0..1` or `null` when never exercised (excluded from averages, not
+scored `0`). Scoring is a pure function of `(trace, task)`: **no LLM judge** (non-deterministic +
+biased), **no elapsed time** (LLM-latency-dominated, not behaviour). The dimensions:
+- **completion** — milestone-graph progress (see below).
+- **planning** — did a craft/smelt pursue its *direct* prerequisites first (no premature attempts)?
+- **tool_use** — valid actions respecting preconditions (`1 - self-inflicted errors / actions`).
+- **adaptation** — after a SELF-caused failure, does the next action differ (not looping)?
+- **robustness** — recovery after an EXTERNAL disturbance (e.g. another bot takes a resource).
+- **efficiency** — productive-action ratio (NOT duration, NOT raw step count).
+
+Errors are DIAGNOSTICS, not blunt penalties; only *looping* (repeating an action that changed
+nothing) is penalised, and env-fault failures are classified apart from agent-fault ones. `score`
+is the roll-up digest (`0.5*completion + 0.5*mean(available behaviour dims)`); the profile is the
+headline. `checkSuccess(state, task)` evaluates the declarative success DSL (v1: `inventory`
+minimums) — keep it declarative so task authors never write engine code.
+
+**Milestones** (`scoring/milestones.js`) are a per-task dependency **DAG** of progress checkpoints,
+authored in the task JSON under `"milestones"` (there is NO recipe auto-derivation). Each node is
+`{ id, <matcher>, count?, label?, deps?, tool? }` where `<matcher>` ∈ `{item}|{any:[...]}|{suffix}`
+and `deps` lists the ids of its direct prerequisites. Why a DAG, not a linear chain: a complex task
+has many valid solution orders, so a forced sequence mis-scores legal reorderings. Two rules make
+credit path-independent:
+- **completion** uses *backward entailment* — reaching a node credits all of its prerequisites (you
+  can't hold a stone pickaxe without having had sticks, cobblestone and table access), so credit
+  never depends on catching a transient intermediate in the inventory.
+- **planning** checks a craft/smelt's *actual direct parents*, not "every earlier step". `tool:true`
+  marks a recipe REQUIREMENT (crafting_table/furnace, satisfied by a world block): counted for
+  completion via entailment, but EXCLUDED from the premature check (its presence is proven by the
+  dependent action succeeding). A task may omit `milestones` — it then scores on the four
+  milestone-free dimensions only. `validateMilestones(task)` flags dangling deps / duplicate ids.
 
 ### Results store — `scoring/store.js`
 `saveResult(scorecard, trace, dir?)` writes one
@@ -196,8 +229,9 @@ winner.
 
 ### Tasks — `tasks/*.json`
 The benchmark content, authored purely as data (no engine code). Each task has a deterministic
-`setup`, an automatic `success` check, a `max_steps` cap, and a one-line `rationale` naming the
-skill it isolates. Current suite ramps in difficulty: `gather_wood` → `stone_pickaxe` →
+`setup`, an automatic `success` check, a `max_steps` cap, a one-line `rationale` naming the skill
+it isolates, and (optionally) a `milestones` dependency DAG for partial-credit scoring (see
+Scoring). Current suite ramps in difficulty: `gather_wood` → `stone_pickaxe` →
 `iron_pickaxe`. If a task needs a new capability, add the skill in `agent/skills.js` rather
 than embedding logic here.
 
