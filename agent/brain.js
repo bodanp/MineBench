@@ -45,6 +45,7 @@ Rules:
 - After every action, read the tool result and your new "inventory": if the item/effect you expected is not there, the action FAILED — do not pretend it worked or move on. Diagnose and try a different approach.
 - Take ONE action at a time, then read the new observation before choosing the next.
 - If "nearby" lists what you need with "exposed": true, go to its "at" coordinates. If that entry is "exposed": false (buried) or NOT listed, do not path straight to it — explore or dig toward it (move_to an open point ~15 blocks away, or dig down) and re-check "nearby" until an exposed one appears.
+- Respect crafting dependencies: most items are built from intermediate products that must themselves be crafted or mined first, and some recipes only work with a crafting_table placed nearby and the right tool equipped.
 - If a tool call returns an error, read it and try a different approach instead of repeating the same call.
 - If "surroundings.blocked" is true (a 2-tall wall) or your position barely changes between steps, mine_block the block in front or move_to around it. If "surroundings.can_step_up" is true, use move_forward to hop it. Do not keep repeating the same failing move_to.
 - Entities and players are NOT resources or destinations. Never navigate toward a player or your own past position — only travel to block coordinates (from "nearby") or to genuinely new, unexplored areas.
