@@ -100,11 +100,19 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     }
   })
 
-  // If THIS bot dies, end the task instead of playing on. Mineflayer auto-respawns the bot on
-  // death, so without this a killed bot would silently come back and keep acting. We latch the
-  // death and break the run loop; the finally block's bot.quit() then disconnects it.
+  // If THIS bot dies, end the task IMMEDIATELY — don't play on. Mineflayer auto-respawns the bot
+  // on death, so without this a killed bot would silently come back and keep acting. Checking
+  // `botDied` only between steps isn't enough: a long in-flight action (attack_entity / move_to
+  // can run up to ~30s) would let the respawned bot keep fighting before the loop notices. So we
+  // also disconnect right here in the handler, which aborts any in-flight action and prevents the
+  // respawn from ever taking another step.
   let botDied = false
-  bot.on('death', () => { botDied = true; log('Bot died — ending task.') })
+  bot.on('death', () => {
+    if (botDied) return
+    botDied = true
+    log('Bot died — disconnecting immediately.')
+    try { bot.quit() } catch (_) {}
+  })
 
   // Surface the common anti-cheat movement kick with the fix.
   bot.on('kicked', (reason) => {
@@ -194,8 +202,14 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     trace.ended_reason = endReason
     emit({ type: 'run_end', ended_reason: endReason, duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
   } catch (e) {
-    log('Run error:', e.message)
-    trace.ended_reason = trace.ended_reason || 'error'
+    // A death that aborts an in-flight action (we call bot.quit() the instant the bot dies) can
+    // surface here as a thrown error — attribute it to the death, not a generic 'error'.
+    if (botDied) {
+      trace.ended_reason = 'died'
+    } else {
+      log('Run error:', e.message)
+      trace.ended_reason = trace.ended_reason || 'error'
+    }
   } finally {
     trace.duration_s = +((Date.now() - startedMs) / 1000).toFixed(1)
     try { bot.quit() } catch (_) {}
