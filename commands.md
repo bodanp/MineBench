@@ -64,6 +64,37 @@ Run in the server console (or as an op'd player) to grant night vision that neve
 /effect give @s night_vision infinite 0 true
 ```
 
+## Manage servers (optional — for keeping them warm or resetting)
+The dashboard/CLI already auto-manage servers; use these only to hold them warm or reset manually.
+```bash
+node bench.js --task gather_wood --model-a copilot/gpt-5.4 --model-b copilot/gpt-4o
+```
+
+npm run servers:up           # start + hold server A warm (Ctrl+C stops it)
+npm run servers:up:both      # hold A + B warm (for head-to-head)
+npm run servers:reset        # wipe + regenerate world A from the seed, then hold
+npm run servers:reset:both   # wipe + regenerate A and B
+npm run servers:down         # stop servers this launcher started
+```
+
+## Flags reference
+| Flag | Meaning |
+|------|---------|
+| `--task <id>` | Run a task from `tasks/*.json` (auto-scored). |
+| `--goal "<text>"` | Free-form ad-hoc goal (no auto success check). |
+| `--model <name>` | Single model, e.g. `copilot/gpt-4.1`, `gpt-4o`. |
+| `--model-a` / `--model-b` | Head-to-head: one model per bot. |
+| `--world same\|different` | H2H only: shared world vs two same-seed worlds (default `different`). |
+| `--reset` | Wipe world(s) and regenerate from the seed before running. |
+| `--no-server` | Don't auto-launch; connect to a server you're managing yourself. |
+| `--verbose` | Stream agent thoughts to the console. |
+
+## Notes
+- Copilot models need `COPILOT_TOKEN` in `.env`.
+- Server config via env (optional): `MINEBENCH_SEED`, `MINEBENCH_JAVA_ARGS`,
+  `MINEBENCH_SERVER_A_DIR`/`_B_DIR`, `MINEBENCH_SERVER_A_PORT`/`_B_PORT`.
+- Server B auto-provisions (clones from A) the first time head-to-head "different worlds" runs.
+
 ## Other
 ```bash
 npm run smoke                # connect + walk 30s sanity check (node bot/bot.js)

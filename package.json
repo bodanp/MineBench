@@ -9,7 +9,12 @@
     "test": "node scoring/scorer.selftest.js",
     "smoke": "node bot/bot.js",
     "dashboard": "node dashboard/live-server.js",
-    "dashboard:build": "node dashboard/build.js"
+    "dashboard:build": "node dashboard/build.js",
+    "servers:up": "node harness/servers.js up A",
+    "servers:up:both": "node harness/servers.js up both",
+    "servers:reset": "node harness/servers.js reset A",
+    "servers:reset:both": "node harness/servers.js reset both",
+    "servers:down": "node harness/servers.js down"
   },
   "repository": {
     "type": "git",
