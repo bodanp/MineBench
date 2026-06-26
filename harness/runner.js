@@ -92,6 +92,12 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     }
   })
 
+  // If THIS bot dies, end the task instead of playing on. Mineflayer auto-respawns the bot on
+  // death, so without this a killed bot would silently come back and keep acting. We latch the
+  // death and break the run loop; the finally block's bot.quit() then disconnects it.
+  let botDied = false
+  bot.on('death', () => { botDied = true; log('Bot died — ending task.') })
+
   // Surface the common anti-cheat movement kick with the fix.
   bot.on('kicked', (reason) => {
     const text = typeof reason === 'string' ? reason : JSON.stringify(reason)
@@ -119,6 +125,7 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     let endReason = 'max_steps'
 
     for (let step = 0; step < maxSteps; step++) {
+      if (botDied) { endReason = 'died'; break }
       if (!bot.entity) { endReason = 'disconnected'; break }
 
       const obs = buildObservation(bot)
@@ -165,6 +172,7 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
 
       // Harness-owned success detection (don't trust the model's stop()).
       if (checkSuccess({ inventory: readInventory(bot), killed_players: [...killedPlayers] }, task)) { endReason = 'success'; break }
+      if (botDied) { endReason = 'died'; break }
       if (done) { endReason = 'agent_stop'; break }
     }
 

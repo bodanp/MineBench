@@ -22,9 +22,14 @@ async function applyTaskSetup(bot, task, log = () => {}) {
     const [x, y, z] = s.teleport
     cmds.push(`/tp ${bot.username} ${x} ${y} ${z}`)
   } else if (s.teleport === 'spawn') {
-    // Drop the bot on the world spawn — always a safe surface spot, no Y guessing.
+    // Drop the bot on the world spawn — always a safe surface spot, no Y guessing. An optional
+    // spawn_offset nudges the bot a few blocks off spawn so two duelists don't start stacked on
+    // the same point; give each opposing task an opposite offset to set them apart for a duel.
     const sp = bot.spawnPoint
-    if (sp) cmds.push(`/tp ${bot.username} ${sp.x} ${sp.y} ${sp.z}`)
+    if (sp) {
+      const [ox, oy, oz] = Array.isArray(s.spawn_offset) ? s.spawn_offset : [0, 0, 0]
+      cmds.push(`/tp ${bot.username} ${sp.x + ox} ${sp.y + oy} ${sp.z + oz}`)
+    }
   }
   if (s.clear_inventory !== false) cmds.push(`/clear ${bot.username}`)
   for (const g of (s.give || [])) cmds.push(`/give ${bot.username} ${g.item} ${g.count || 1}`)

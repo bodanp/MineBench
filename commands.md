@@ -24,8 +24,9 @@ node bench.js --task gather_wood --model-a copilot/gpt-5.4 --model-b copilot/gpt
 
 ## Duel: two bots kill each other (asymmetric dual mode)
 Give each bot its OWN task with `--task-a` / `--task-b`. Bot A is `MineBenchBotA`, bot B is
-`MineBenchBotB`, so point each task at the OTHER bot. Both are given an iron_sword and spawn
-together. (Requires PvP enabled on the server and both bots `/op`'d.)
+`MineBenchBotB`, so point each task at the OTHER bot. Both are given a stone_sword and spawn a
+short distance apart (via each task's `spawn_offset`), so they must close the gap and fight a
+real duel. (Requires PvP enabled on the server and both bots `/op`'d.)
 ```bash
 node bench.js --task-a kill_bot_b --task-b kill_bot_a --model-a copilot/gpt-5.4 --model-b copilot/gpt-4o
 ```

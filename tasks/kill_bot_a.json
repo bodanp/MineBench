@@ -4,13 +4,15 @@
   "goal": "Kill the player named MineBenchBotA.",
   "difficulty": 2,
   "max_steps": 50,
-  "rationale": "PvP-vs-player test: locate the opposing bot by username and kill it with attack_player. No weapon is given — the bot must hand-fight or reason its way to a better weapon. Success is detected from the server's real death event, not the model's claim. Run this on the bot whose username is NOT MineBenchBotA (e.g. MineBenchBotB).",
+  "rationale": "PvP-vs-player test: locate the opposing bot by username and kill it with attack_player. Each duelist spawns a short distance apart (spawn_offset) with a stone_sword, so the model must close the gap and fight a real, watchable duel — health drops per hit and full hunger lets it regenerate, so it can choose to attack in bursts (the attack_player 'hits' arg), retreat, and re-engage. Success is detected from the server's real death event, not the model's claim. Run this on the bot whose username is NOT MineBenchBotA (e.g. MineBenchBotB).",
   "setup": {
     "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
     "time": "day",
     "weather": "clear",
     "teleport": "spawn",
-    "clear_inventory": true
+    "spawn_offset": [8, 0, 0],
+    "clear_inventory": true,
+    "give": [{ "item": "stone_sword", "count": 1 }]
   },
   "success": { "killed_player": "MineBenchBotA" }
 }

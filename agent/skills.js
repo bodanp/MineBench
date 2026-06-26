@@ -194,11 +194,12 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'attack_player',
-      description: 'Attack and kill another PLAYER by their exact username. Uses the same combat as attack_entity: walks to that player and swings with whatever it has equipped until they die. Never the human or yourself.',
+      description: 'Attack another PLAYER by their exact username. Uses the same combat as attack_entity: walks to that player and swings with whatever it has equipped. If "hits" is provided, the bot swings that many times and then returns, reporting the hits landed, the target\'s health, and its own health. If "hits" is omitted, the bot keeps swinging until the player dies. Never the human or yourself.',
       parameters: {
         type: 'object',
         properties: {
-          username: { type: 'string', description: 'The exact username of the player to attack (e.g. "MineBenchBotB").' }
+          username: { type: 'string', description: 'The exact username of the player to attack (e.g. "MineBenchBotB").' },
+          hits: { type: 'integer', minimum: 1, description: 'How many times to swing at the player before returning. If omitted, the bot attacks until the player dies.' }
         },
         required: ['username']
       }
@@ -604,7 +605,7 @@ const TOOL_IMPLS = {
       : `Killed ${name} but no drops were collected (they may have despawned or fallen out of reach).`
   },
 
-  async attack_player(bot, { username }) {
+  async attack_player(bot, { username, hits }) {
     if (!username || typeof username !== 'string') {
       return 'No username given. Call attack_player with the exact username of the player to attack.'
     }
@@ -618,11 +619,28 @@ const TOOL_IMPLS = {
       return `Player ${username} is not currently visible. Check "nearby_players" in your observation (or call look_around) for their coordinates, move_to them, then try again.`
     }
 
-    // Same combat path as attack_entity: chase + swing with whatever you have equipped until dead.
-    const result = await attackUntilDead(bot, target)
-    return result.killed
-      ? `Killed ${username}.`
-      : `Could not kill ${username}: ${result.reason}. Move_to closer and try again.`
+    // Optional swing budget: when the model supplies a positive integer, we swing that many
+    // times and hand control back so it can drive its own hit-and-run engagement. Invalid or
+    // non-positive values are ignored, falling back to the default attack-until-dead behavior.
+    let maxHits
+    if (hits != null) {
+      const n = Math.floor(Number(hits))
+      if (Number.isFinite(n) && n > 0) maxHits = n
+    }
+
+    // Same combat path as attack_entity: chase + swing with whatever you have equipped.
+    const result = await attackUntilDead(bot, target, { maxHits })
+    if (result.killed) {
+      return `Killed ${username} after ${result.hits} hits.`
+    }
+
+    // Report only facts so the model can decide its next move on its own. Other players'
+    // health is not always sent by the server, so report "unknown" when it is unavailable.
+    const targetHealth = (target.isValid && typeof target.health === 'number') ? target.health : 'unknown'
+    if (maxHits != null) {
+      return `Swung ${result.hits}x at ${username}. ${username} is still alive. Target health: ${targetHealth}. Your health: ${bot.health}.`
+    }
+    return `Could not kill ${username} after ${result.hits} hits: ${result.reason}. Target health: ${targetHealth}. Your health: ${bot.health}.`
   },
 
   async look_around(bot, { radius } = {}) {
@@ -877,11 +895,15 @@ function entityMatches(entity, name) {
 // target is constantly just out of reach. Instead we hand pathfinder a DYNAMIC GoalFollow,
 // which keeps re-computing the route toward the mob's live position for the whole fight —
 // the bot stays glued to the target instead of giving up after a single stale approach.
-async function attackUntilDead(bot, target) {
+async function attackUntilDead(bot, target, { maxHits } = {}) {
   const REACH = 3.5
   const deadline = Date.now() + 30000
   const targetId = target.id
   let lastPos = target.position.clone()
+  // Count the swings we actually land (only incremented when in melee range and attacking).
+  // When maxHits is set, we stop after that many swings so the caller can hand control back
+  // to the model between bursts; when it's null we fall through to the death/timeout guards.
+  let hits = 0
 
   // The server sends an entity-status "dead" packet (mineflayer 'entityDead') the moment an
   // entity actually dies. For PLAYERS this is the only trustworthy kill signal: a player going
@@ -897,13 +919,13 @@ async function attackUntilDead(bot, target) {
   try { bot.pathfinder.setGoal(new goals.GoalFollow(target, 2), true) } catch (_) {}
 
   try {
-    while (!died && target.isValid && Date.now() < deadline) {
+    while (!died && target.isValid && Date.now() < deadline && (maxHits == null || hits < maxHits)) {
       lastPos = target.position.clone()
       if (bot.entity.position.distanceTo(target.position) <= REACH) {
         // In range: face it and swing, paced to the ~0.6s attack cooldown so each hit lands
         // at full damage. GoalFollow keeps us in range while we trade blows.
         try { await bot.lookAt(target.position.offset(0, target.height ? target.height * 0.5 : 0.5, 0), true) } catch (_) {}
-        try { bot.attack(target) } catch (_) {}
+        try { bot.attack(target); hits++ } catch (_) {}
         await sleep(620)
       } else {
         // Out of reach: let the dynamic GoalFollow keep closing the gap; just poll until we
@@ -920,8 +942,11 @@ async function attackUntilDead(bot, target) {
 
   // A confirmed death packet is definitive. For mobs in the arena, isValid going false also
   // reliably means dead (they don't roam out of range), so we keep accepting that too.
-  if (died || !target.isValid) return { killed: true, pos: lastPos }
-  return { killed: false, reason: 'the target kept its distance for too long' }
+  if (died || !target.isValid) return { killed: true, pos: lastPos, hits }
+  // Stopped because we reached the requested swing budget (not dead, not timed out): the
+  // caller asked for a fixed burst of hits and now gets control back.
+  if (maxHits != null && hits >= maxHits) return { killed: false, reason: 'reached the requested number of hits', hits }
+  return { killed: false, reason: 'the target kept its distance for too long', hits }
 }
 
 
