@@ -39,10 +39,11 @@
 const { getMilestones, reachedCount, matchesItem } = require('./milestones')
 
 function checkSuccess(state, task) {
-  if (task.id && task.id === 'interactive') return true
   const spec = task && task.success
   if (!spec || typeof spec !== 'object') return false
-  // No criteria (e.g. an ad-hoc goal) can never auto-succeed — there is nothing to verify.
+  // No criteria (e.g. an ad-hoc / interactive goal) can never auto-succeed mid-run — there is
+  // nothing to verify here. For those tasks we instead TRUST the agent's stop() at scoring time
+  // (see trustsAgentStop + the `success` calc in score()).
   if (Object.keys(spec).length === 0) return false
 
   if (spec.inventory) {
@@ -62,6 +63,16 @@ function checkSuccess(state, task) {
   }
 
   return true
+}
+
+// Interactive / ad-hoc goals have no declarative success criteria to verify, so for those we
+// TRUST the agent's own stop() as the success signal. Defined benchmark tasks (non-empty success
+// spec) never trust stop — they must satisfy real criteria. An explicit task.trust_stop overrides.
+function trustsAgentStop(task) {
+  if (!task) return false
+  if (typeof task.trust_stop === 'boolean') return task.trust_stop
+  const spec = task.success
+  return !spec || typeof spec !== 'object' || Object.keys(spec).length === 0
 }
 
 const clamp01 = (n) => Math.max(0, Math.min(1, n))
@@ -151,8 +162,11 @@ function score(trace, task) {
   const goalNode = milestones.length ? milestones[milestones.length - 1] : null
   const goalReached = goalNode ? reachedCount(maxHeld, goalNode) >= goalNode.count : false
 
+  // For tasks with no verifiable criteria (interactive / ad-hoc), the agent calling stop() — which
+  // the harness records as ended_reason 'agent_stop' — is taken as success ("I'm done").
   const success = trace.ended_reason === 'success' ||
-    checkSuccess(trace.final_state || { inventory: {} }, task) || goalReached
+    checkSuccess(trace.final_state || { inventory: {} }, task) || goalReached ||
+    (trustsAgentStop(task) && trace.ended_reason === 'agent_stop')
 
   // ---- walk the action steps once, gathering every signal -----------------------------------
   const actSteps = steps.filter(s => s.action)
@@ -311,4 +325,4 @@ function score(trace, task) {
   }
 }
 
-module.exports = { checkSuccess, score, ENV_ERROR_RE }
+module.exports = { checkSuccess, score, trustsAgentStop, ENV_ERROR_RE }
