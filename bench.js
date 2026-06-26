@@ -70,7 +70,7 @@ function interactiveTask() {
     id: 'interactive',
     title: 'Interactive session',
     goal: '',
-    max_steps: parseInt(process.env.MAX_STEPS || '60', 10),
+    max_steps: parseInt(process.env.MAX_STEPS || '200', 10),
     setup: {
       gamerules: { doDaylightCycle: false, doWeatherCycle: false, doMobSpawning: false, keepInventory: true },
       time: 'day', weather: 'clear', clear_inventory: false

@@ -1,9 +1,7 @@
 {
   "_comment": "Models shown in the dashboard's model dropdown. Edit this list freely. Each entry is either a plain string (used verbatim as --model) or an object { label, value }. Bare names (e.g. gpt-4o) resolve as Azure OpenAI deployments; a 'copilot/' prefix routes through the GitHub Copilot API (requires COPILOT_TOKEN). 'default' is preselected.",
-  "default": "gpt-4.1-mini",
+  "default": "copilot/gpt-4.1",
   "models": [
-    "gpt-4o",
-    "gpt-4o-mini",
     { "label": "GPT-4.1 (copilot)", "value": "copilot/gpt-4.1" },
     { "label": "GPT-4.1 mini (copilot)", "value": "copilot/gpt-4.1-mini" },
     { "label": "GPT-4.1 nano (copilot)", "value": "copilot/gpt-4.1-nano" },
