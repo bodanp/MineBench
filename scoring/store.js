@@ -54,6 +54,43 @@ function resultFilesForTask(taskId, sinceMs = 0, dir = DEFAULT_DIR) {
     .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
 }
 
+function resultId(entry) {
+  const tr = entry && entry.trace ? entry.trace : {}
+  const taskId = (entry && entry.scorecard && entry.scorecard.task_id) || tr.task_id || 'unknown'
+  const model = String((entry && entry.scorecard && entry.scorecard.model) || tr.model || 'model')
+  const started = tr.started_at || 'na'
+  return `${taskId}__${model}__${started}`
+}
+
+function deleteResultById(runId, dir = DEFAULT_DIR) {
+  if (!runId || !fs.existsSync(dir)) return null
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.json')) continue
+    const file = path.join(dir, f)
+    try {
+      const entry = JSON.parse(fs.readFileSync(file, 'utf8'))
+      if (resultId(entry) === runId) {
+        fs.unlinkSync(file)
+        return file
+      }
+    } catch (_) {}
+  }
+  return null
+}
+
+function deleteAllResults(dir = DEFAULT_DIR) {
+  if (!fs.existsSync(dir)) return 0
+  let count = 0
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.json')) continue
+    try {
+      fs.unlinkSync(path.join(dir, f))
+      count++
+    } catch (_) {}
+  }
+  return count
+}
+
 // Pick the better of two scorecards: success first, then higher roll-up score, then further
 // progress. Elapsed time is deliberately NOT a tiebreaker — it is dominated by LLM latency
 // (a model that reasons longer is not "worse"), so it must never decide a winner.
@@ -125,4 +162,4 @@ function printComparison(cards, log = console.log) {
   log('   Note: elapsed time is informational only — never part of the score. Same-world race: bots may have competed for blocks.')
 }
 
-module.exports = { saveResult, loadResults, comparisonTable, resultFilesForTask, pickWinner, printComparison, DEFAULT_DIR }
+module.exports = { saveResult, loadResults, comparisonTable, resultFilesForTask, resultId, deleteResultById, deleteAllResults, pickWinner, printComparison, DEFAULT_DIR }

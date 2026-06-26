@@ -65,6 +65,10 @@
         <span class="live-dot"></span>
         <span class="live-label">LIVE</span>
         <span id="live-status" class="live-status"></span>
+        <label class="live-verbose">
+          <input type="checkbox" id="live-verbose" />
+          <span>Verbose</span>
+        </label>
       </div>
       <div id="live-lanes" class="live-lanes"></div>
       <div id="live-compare" class="live-compare"></div>
@@ -99,6 +103,10 @@
     <section id="runs-section">
       <h2>All runs</h2>
       <p class="hint">Click a row to view the step-by-step trace.</p>
+      <div id="history-actions" class="history-actions hidden">
+        <button id="delete-all-runs" class="btn-danger btn-mini" type="button">Delete all runs</button>
+        <span id="history-msg" class="history-msg"></span>
+      </div>
       <div class="table-wrap"><table id="runs"></table></div>
     </section>
   </main>
