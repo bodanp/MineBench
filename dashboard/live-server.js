@@ -97,9 +97,9 @@ function regenerateHistory() {
 }
 
 function deleteOneRun(runId) {
-  const id = decodeURIComponent(String(runId || '')).trim()
+  let id = String(runId || '').trim()
+  try { id = decodeURIComponent(id).trim() } catch (_) { return { ok: false, code: 400, error: 'Invalid run id.' } }
   if (!id) return { ok: false, code: 400, error: 'Missing run id.' }
-  const deleted = deleteResultById(id)
   if (!deleted) return { ok: false, code: 404, error: 'Run not found.' }
   if (!regenerateHistory()) return { ok: false, code: 500, error: 'Deleted the run, but failed to rebuild dashboard history.' }
   broadcast({ type: 'history_updated' })
