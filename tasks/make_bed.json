@@ -14,5 +14,12 @@
     "clear_inventory": true,
     "summon": [{ "entity": "sheep", "count": 5, "offset": [2, 0, 2] }]
   },
-  "success": { "inventory": { "white_bed": 1 } }
+  "success": { "inventory": { "white_bed": 1 } },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wool", "item": "white_wool", "count": 3, "label": "Collect 3 wool from sheep" },
+    { "id": "white_bed", "item": "white_bed", "label": "Craft white bed", "deps": ["planks", "wool", "crafting_table"] }
+  ]
 }

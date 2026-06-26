@@ -14,5 +14,8 @@
     "clear_inventory": true,
     "summon": [{ "entity": "sheep", "count": 2, "offset": [2, 0, 2] }]
   },
-  "success": { "inventory": { "mutton": 1 } }
+  "success": { "inventory": { "mutton": 1 } },
+  "milestones": [
+    { "id": "mutton", "item": "mutton", "count": 1, "label": "Kill a sheep for mutton" }
+  ]
 }

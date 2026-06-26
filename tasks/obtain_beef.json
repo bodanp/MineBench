@@ -14,5 +14,8 @@
     "clear_inventory": true,
     "summon": [{ "entity": "cow", "count": 2, "offset": [2, 0, 2] }]
   },
-  "success": { "inventory": { "beef": 1 } }
+  "success": { "inventory": { "beef": 1 } },
+  "milestones": [
+    { "id": "beef", "item": "beef", "count": 1, "label": "Kill a cow for beef" }
+  ]
 }

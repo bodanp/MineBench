@@ -14,5 +14,8 @@
     "clear_inventory": true,
     "summon": [{ "entity": "chicken", "count": 3, "offset": [2, 0, 2] }]
   },
-  "success": { "inventory": { "chicken": 1 } }
+  "success": { "inventory": { "chicken": 1 } },
+  "milestones": [
+    { "id": "chicken", "item": "chicken", "count": 1, "label": "Kill a chicken for raw chicken" }
+  ]
 }
