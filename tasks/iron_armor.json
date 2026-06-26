@@ -1,0 +1,40 @@
+{
+  "id": "iron_armor",
+  "title": "Craft and wear a full iron armor set",
+  "goal": "Craft a full set of iron armor from scratch (iron_helmet, iron_chestplate, iron_leggings, iron_boots), then EQUIP all four pieces so you are wearing the complete set.",
+  "difficulty": 5,
+  "max_steps": 250,
+  "rationale": "Very long-horizon tech-tree + equip task: gather wood, craft a wooden then a stone pickaxe, mine cobblestone for a furnace, mine and smelt ~24 iron, craft all four armor pieces, then equip (wear) each one. Tests deep tool-tier reasoning, smelting, and equipping armor to the correct slots.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": {
+    "worn": {
+      "iron_helmet": 1,
+      "iron_chestplate": 1,
+      "iron_leggings": 1,
+      "iron_boots": 1
+    }
+  },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "cobblestone", "any": ["cobblestone", "cobbled_deepslate"], "count": 11, "label": "Mine cobblestone", "deps": ["wooden_pickaxe"] },
+    { "id": "stone_pickaxe", "item": "stone_pickaxe", "label": "Craft stone pickaxe", "deps": ["stick", "cobblestone", "crafting_table"] },
+    { "id": "furnace", "item": "furnace", "label": "Make a furnace", "deps": ["cobblestone", "crafting_table"] },
+    { "id": "raw_iron", "any": ["raw_iron", "iron_ore"], "count": 24, "label": "Mine iron ore", "deps": ["stone_pickaxe"] },
+    { "id": "iron_ingot", "item": "iron_ingot", "count": 24, "label": "Smelt iron ingots", "deps": ["raw_iron", "furnace"] },
+    { "id": "iron_helmet", "item": "iron_helmet", "label": "Craft iron helmet", "deps": ["iron_ingot", "crafting_table"] },
+    { "id": "iron_chestplate", "item": "iron_chestplate", "label": "Craft iron chestplate", "deps": ["iron_ingot", "crafting_table"] },
+    { "id": "iron_leggings", "item": "iron_leggings", "label": "Craft iron leggings", "deps": ["iron_ingot", "crafting_table"] },
+    { "id": "iron_boots", "item": "iron_boots", "label": "Craft iron boots", "deps": ["iron_ingot", "crafting_table"] }
+  ]
+}

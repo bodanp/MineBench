@@ -1,0 +1,31 @@
+{
+  "id": "cook_steak",
+  "title": "Cook a few steaks",
+  "goal": "Cook at least 3 steak (cooked_beef): hunt cows for raw beef, build a furnace, and cook the beef.",
+  "difficulty": 3,
+  "max_steps": 100,
+  "rationale": "Mid-tier task introducing FURNACE COOKING: gather wood, make a wooden pickaxe, mine cobblestone for a furnace, hunt cows for beef, and smelt the beef into steak using a fuel. Tests mob hunting plus smelting/cooking.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true,
+    "summon": [
+      { "entity": "cow", "count": 6, "offset": [3, 0, 2] }
+    ]
+  },
+  "success": { "inventory": { "cooked_beef": 3 } },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "cobblestone", "any": ["cobblestone", "cobbled_deepslate"], "count": 8, "label": "Mine cobblestone", "deps": ["wooden_pickaxe"] },
+    { "id": "furnace", "item": "furnace", "label": "Make a furnace", "deps": ["cobblestone", "crafting_table"] },
+    { "id": "beef", "item": "beef", "count": 3, "label": "Hunt cows for beef" },
+    { "id": "cooked_beef", "item": "cooked_beef", "count": 3, "label": "Cook the beef", "deps": ["beef", "furnace"] }
+  ]
+}

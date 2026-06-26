@@ -168,10 +168,25 @@ const TOOL_SCHEMAS = [
     type: 'function',
     function: {
       name: 'equip',
-      description: 'Equip an item from inventory to your hand (e.g. a pickaxe before mining stone/ore).',
+      description: 'Equip an item from your inventory. A tool/weapon goes to your HAND (e.g. a pickaxe before mining); a piece of ARMOR is WORN in its slot automatically (helmet->head, chestplate->chest, leggings->legs, boots->feet); a shield goes to your off-hand. Equip each armor piece in turn to wear a full set.',
       parameters: {
         type: 'object',
         properties: { item: { type: 'string', description: 'The item to equip (lowercase underscored name)' } },
+        required: ['item']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'store_in_chest',
+      description: 'Deposit an item from your inventory into the NEAREST chest (within 32 blocks). If there is no chest, craft one and place_block it first. Moves up to "count" of the item into the chest, verifies the deposit by the drop in your inventory, and reports what actually went in. Use this to put a finished item away — e.g. each piece of an armor set into a chest.',
+      parameters: {
+        type: 'object',
+        properties: {
+          item: { type: 'string', description: 'The item to store (lowercase underscored name, e.g. "leather_chestplate").' },
+          count: { type: 'integer', description: 'How many to deposit. Omit to deposit all of that item you are holding.' }
+        },
         required: ['item']
       }
     }
@@ -576,12 +591,59 @@ const TOOL_IMPLS = {
     let i = bot.inventory.items().find(x => x.name === name)
     for (let n = 0; n < 12 && !i; n++) { await sleep(50); i = bot.inventory.items().find(x => x.name === name) }
     if (!i) return `No ${name} in inventory.`
+    const dest = equipDestination(name)
     try {
-      await equipAndConfirm(bot, i)
-      return `Equipped ${name}.`
+      await equipAndConfirm(bot, i, dest)
+      return dest === 'hand' ? `Equipped ${name} in hand.`
+        : dest === 'off-hand' ? `Equipped ${name} in your off-hand.`
+        : `Equipped — now wearing ${name}.`
     } catch (e) {
       return `Failed to equip ${item}: ${e.message}`
     }
+  },
+
+  async store_in_chest(bot, { item, count }) {
+    const name = normalizeName(item)
+    const mcData = loadMcData(bot)
+    const chestBlock = bot.findBlock({ matching: mcData.blocksByName.chest.id, maxDistance: 32 })
+    if (!chestBlock) return `No chest nearby to store in — craft a chest and place_block it first.`
+
+    // Walk to the chest and CONFIRM we're in interaction range before opening it, or openContainer
+    // hangs waiting for a window that never fires.
+    try { await navigate(bot, new goals.GoalLookAtBlock(chestBlock.position, bot.world), chestBlock.position) } catch (_) {}
+    const dist = bot.entity.position.distanceTo(chestBlock.position)
+    if (dist > 4) return `Could not reach the chest at ${formatPos(chestBlock.position)} (stuck ${dist.toFixed(1)} blocks away).`
+
+    const itemId = mcData.itemsByName[name]?.id
+    if (itemId == null) return `Unknown item: ${item}.`
+
+    // A JUST-crafted item can take a tick to appear in bot.inventory — poll briefly before
+    // concluding we hold none, so we don't skip a deposit for an item we actually have.
+    let have = readInventory(bot)[name] || 0
+    for (let n = 0; n < 10 && have <= 0; n++) { await sleep(60); have = readInventory(bot)[name] || 0 }
+
+    let chest, depositErr = null, deposited = 0
+    try {
+      chest = await bot.openContainer(chestBlock)
+      if (have > 0) {
+        const before = chestCount(chest, name)
+        const want = count && count > 0 ? Math.min(count, have) : have
+        try { await chest.deposit(itemId, null, want) } catch (e) { depositErr = e }
+        deposited = Math.max(0, chestCount(chest, name) - before)
+      }
+      // AUTHORITATIVE: record what is ACTUALLY in the chest now. The open container is the server's
+      // ground truth — unlike a player-inventory delta it can't be fooled by client-sync lag, so a
+      // deposit whose inventory update lagged is still counted and re-attempts never desync.
+      recordChestContents(bot, chest)
+    } finally {
+      try { if (chest) await chest.close() } catch (_) {}
+    }
+
+    const inChest = (bot._storedItems && bot._storedItems[name]) || 0
+    if (deposited > 0) return `Stored ${deposited}x ${name} in the chest at ${formatPos(chestBlock.position)} (it now holds ${inChest}).`
+    if (inChest > 0) return `${name} is already in the chest (${inChest} there) — nothing more to store.`
+    if (depositErr) return `Failed to store ${name} in the chest: ${depositErr.message}`
+    return `Nothing was stored; no ${name} in your inventory or the chest.`
   },
 
   async attack_entity(bot, { entity_type }) {
@@ -741,7 +803,8 @@ const TOOL_IMPLS = {
     const name = normalizeName(target)
     const item = mcData.itemsByName[name]
     const block = mcData.blocksByName[name]
-    if (!item && !block) {
+    const entity = mcData.entitiesByName ? mcData.entitiesByName[name] : null
+    if (!item && !block && !entity) {
       const guesses = suggestNames(mcData, name)
       return `Unknown "${target}". ${guesses.length ? 'Did you mean: ' + guesses.join(', ') + '?' : 'Not found in the knowledge base.'}`
     }
@@ -751,7 +814,7 @@ const TOOL_IMPLS = {
     // It does NOT pick a "best" recipe, order steps, or build a plan — the model does
     // all of that reasoning itself from these facts.
     const out = { name }
-    const displayName = item?.displayName || block?.displayName
+    const displayName = item?.displayName || block?.displayName || entity?.displayName
     if (displayName) out.displayName = displayName
 
     // Every crafting recipe for this item, ids resolved to names. No ranking/filtering.
@@ -770,17 +833,39 @@ const TOOL_IMPLS = {
     out.craftable = readableRecipes.length > 0
     if (readableRecipes.length) out.recipes = readableRecipes
 
-    // Mining facts for a world block: what it drops + which tools yield a drop.
+    // Mining facts for a world block: what it drops, which tools yield a drop, and the BEST tool —
+    // distinguishing a tool that is REQUIRED for any drop (mining it by hand wastes the block) from
+    // one that is merely FASTER, so the model can equip the right thing instead of using its hand.
     if (block && block.diggable) {
       const tools = block.harvestTools
         ? Object.keys(block.harvestTools).map(id => mcData.items[+id]?.name).filter(Boolean)
         : []
+      const requiredType = toolTypeFromNames(tools)
+      const fasterType = bestToolFor(block.material)
+      const best_tool = requiredType
+        ? `${requiredType} (REQUIRED — mining this by hand drops nothing)`
+        : (fasterType ? `${fasterType} (fastest; hand works but is slower)` : 'hand is fine')
       out.mining = {
         drops: blockDropIds(block).map(id => idToName(mcData, id)),
         hardness: block.hardness,
-        tools_that_get_a_drop: tools.length ? tools : 'any (hand works)'
+        tools_that_get_a_drop: tools.length ? tools : 'any (hand works)',
+        best_tool
       }
     }
+
+    // Mob facts: what this entity DROPS when killed, plus the weapon that kills it fastest.
+    if (entity) {
+      out.entity = {
+        category: entity.category || 'mob',
+        drops: entityDropsFor(mcData, name),
+        best_weapon: 'sword (kills fastest; an axe also works; a bare hand is slowest)'
+      }
+    }
+
+    // Reverse lookup: HOW can you obtain this item? Facts derived from recipes (craft), block loot
+    // (mine), entity loot (hunt) + a small smelt table — NOT a plan; the model picks the source.
+    const sources = itemSources(mcData, name)
+    if (Object.keys(sources).length) out.obtained_by = sources
 
     return JSON.stringify(out)
   },
@@ -871,16 +956,39 @@ async function ensureHarvestTool(bot, block) {
   }
 }
 
-// bot.equip resolves when the server ACKs the inventory move, but the actual held-hand slot
-// can take an extra tick to update — so the NEXT action (e.g. mine_block) may run while the
-// hand still holds the OLD item (the "it only switched after mining" bug). Wait until the
-// hand actually holds the requested item (short bounded poll). If it still hasn't switched,
-// throw so the caller reports an honest failure instead of a false "Equipped X".
-async function equipAndConfirm(bot, item) {
-  await bot.equip(item, 'hand')
-  for (let i = 0; i < 20 && bot.heldItem?.type !== item.type; i++) await sleep(25)
-  if (bot.heldItem?.type !== item.type) {
-    throw new Error(`hand still holds ${bot.heldItem?.name || 'nothing'}`)
+// Player-window slot index for each equipment destination (armor + off-hand), used to CONFIRM an
+// equip actually landed. bot.getEquipmentDestSlot is preferred at runtime; this is the fallback.
+const ARMOR_SLOT = { head: 5, torso: 6, legs: 7, feet: 8, 'off-hand': 45 }
+
+// Where an item is equipped, by its name: armor goes to its body slot, a shield to the off-hand,
+// everything else to the hand. This is what lets `equip` WEAR armor instead of just holding it.
+function equipDestination(name) {
+  if (/_helmet$/.test(name) || name === 'turtle_helmet' || name === 'carved_pumpkin') return 'head'
+  if (/_chestplate$/.test(name) || name === 'elytra') return 'torso'
+  if (/_leggings$/.test(name)) return 'legs'
+  if (/_boots$/.test(name)) return 'feet'
+  if (name === 'shield') return 'off-hand'
+  return 'hand'
+}
+
+// bot.equip resolves when the server ACKs the inventory move, but the actual destination slot can
+// take an extra tick to update — so the NEXT action may run before it lands. Wait until the item
+// is actually in the right slot (hand, or the armor/off-hand slot). If it never lands, throw so the
+// caller reports an honest failure instead of a false "Equipped X".
+async function equipAndConfirm(bot, item, destination = 'hand') {
+  await bot.equip(item, destination)
+  const inPlace = () => {
+    if (destination === 'hand') return !!bot.heldItem && bot.heldItem.type === item.type
+    let slot
+    try { slot = bot.getEquipmentDestSlot(destination) } catch (_) { slot = ARMOR_SLOT[destination] }
+    const s = slot != null && bot.inventory ? bot.inventory.slots[slot] : null
+    return !!s && s.type === item.type
+  }
+  for (let i = 0; i < 20 && !inPlace(); i++) await sleep(25)
+  if (!inPlace()) {
+    throw new Error(destination === 'hand'
+      ? `hand still holds ${bot.heldItem?.name || 'nothing'}`
+      : `${item.name} did not move to the ${destination} slot`)
   }
 }
 
@@ -1258,4 +1366,95 @@ function blockDropIds(block) {
   }).filter(id => id != null)
 }
 
-module.exports = { TOOL_SCHEMAS, TOOL_IMPLS, executeAction, STOP_SIGNAL }
+// Items actually sitting in an OPEN chest window (the container slots, NOT the player's inventory).
+// Reading this is the server's ground truth for "what's in the chest".
+function chestContainerItems(chest) {
+  try {
+    if (chest && typeof chest.containerItems === 'function') return chest.containerItems().filter(Boolean)
+  } catch (_) {}
+  const end = chest && chest.inventoryStart != null ? chest.inventoryStart : (chest && chest.slots ? chest.slots.length : 0)
+  return ((chest && chest.slots) || []).slice(0, end).filter(Boolean)
+}
+
+function chestCount(chest, name) {
+  let n = 0
+  for (const it of chestContainerItems(chest)) if (it.name === name) n += it.count
+  return n
+}
+
+// Record the chest's TRUE contents onto the bot as the authoritative "stored" tally the harness
+// scores. Monotonic union (max per item) so once we've seen an item in a chest it stays counted —
+// there is no withdraw tool, so chest contents only ever accumulate.
+function recordChestContents(bot, chest) {
+  bot._storedItems = bot._storedItems || {}
+  const counts = {}
+  for (const it of chestContainerItems(chest)) counts[it.name] = (counts[it.name] || 0) + it.count
+  for (const [n, c] of Object.entries(counts)) bot._storedItems[n] = Math.max(bot._storedItems[n] || 0, c)
+}
+
+// Curated furnace smelts that the data files don't expose cleanly (output -> typical inputs).
+// Facts, not a plan — used by read_data's "obtained_by" so the model can reason about smelting.
+const SMELTS = {
+  iron_ingot: ['raw_iron', 'iron_ore', 'deepslate_iron_ore'],
+  gold_ingot: ['raw_gold', 'gold_ore', 'deepslate_gold_ore', 'nether_gold_ore'],
+  copper_ingot: ['raw_copper', 'copper_ore', 'deepslate_copper_ore'],
+  glass: ['sand', 'red_sand'],
+  stone: ['cobblestone'],
+  smooth_stone: ['stone'],
+  charcoal: ['oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log'],
+  cooked_beef: ['beef'], cooked_porkchop: ['porkchop'], cooked_chicken: ['chicken'],
+  cooked_mutton: ['mutton'], cooked_cod: ['cod'], cooked_salmon: ['salmon'],
+  cooked_rabbit: ['rabbit'], baked_potato: ['potato'], dried_kelp: ['kelp']
+}
+
+// The FASTEST tool type for a block, parsed from minecraft-data's "material" tag
+// (e.g. "mineable/axe" -> "axe", "plant;mineable/axe" -> "axe"). null when no tool beats the hand.
+// This is a SPEED hint; harvestTools separately says which tools yield a DROP at all.
+function bestToolFor(material) {
+  if (!material || typeof material !== 'string') return null
+  const m = material.split(';').find(s => s.startsWith('mineable/'))
+  return m ? m.split('/')[1] : null
+}
+
+// The tool TYPE (pickaxe/axe/shovel/hoe/sword) shared by a list of tool item names, e.g.
+// ["stone_pickaxe","iron_pickaxe"] -> "pickaxe". Used to name a block's REQUIRED harvest tool
+// when minecraft-data's material tag only encodes the tier (e.g. ores -> "incorrect_for_*_tool").
+function toolTypeFromNames(names) {
+  for (const n of (names || [])) {
+    const m = /_(pickaxe|axe|shovel|hoe|sword)$/.exec(n)
+    if (m) return m[1]
+  }
+  return null
+}
+
+// Item names a mob drops when killed (from minecraft-data's entityLoot).
+function entityDropsFor(mcData, entityName) {
+  const loot = mcData.entityLoot && mcData.entityLoot[entityName]
+  if (!loot || !Array.isArray(loot.drops)) return []
+  return [...new Set(loot.drops.map(d => d.item).filter(Boolean))]
+}
+
+// Reverse index: how can the player OBTAIN this item? Pure facts from the game data
+// (recipes -> craft, block loot -> mine, entity loot -> hunt) plus a small curated smelt table.
+// NOT a plan: it lists the available sources; the model decides which one to pursue.
+function itemSources(mcData, name) {
+  const out = {}
+  const itemData = mcData.itemsByName[name]
+  if (itemData && (mcData.recipes[itemData.id] || []).length) out.craft = true
+  const mineBlocks = []
+  for (const [block, entry] of Object.entries(mcData.blockLoot || {})) {
+    if (entry && Array.isArray(entry.drops) && entry.drops.some(d => d.item === name)) mineBlocks.push(block)
+    if (mineBlocks.length >= 8) break
+  }
+  if (mineBlocks.length) out.mine = mineBlocks
+  if (SMELTS[name]) out.smelt = SMELTS[name]
+  const huntMobs = []
+  for (const [mob, entry] of Object.entries(mcData.entityLoot || {})) {
+    if (entry && Array.isArray(entry.drops) && entry.drops.some(d => d.item === name)) huntMobs.push(mob)
+    if (huntMobs.length >= 8) break
+  }
+  if (huntMobs.length) out.hunt = huntMobs
+  return out
+}
+
+module.exports = { TOOL_SCHEMAS, TOOL_IMPLS, executeAction, STOP_SIGNAL, itemSources, entityDropsFor, bestToolFor, toolTypeFromNames, recordChestContents, equipDestination }

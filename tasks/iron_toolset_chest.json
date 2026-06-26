@@ -1,0 +1,43 @@
+{
+  "id": "iron_toolset_chest",
+  "title": "Craft a full set of iron tools and store them in a chest",
+  "goal": "Craft a full set of iron tools from scratch (iron_sword, iron_pickaxe, iron_axe, iron_shovel, iron_hoe), then store all five in a chest.",
+  "difficulty": 5,
+  "max_steps": 260,
+  "rationale": "Very long-horizon tech-tree + storage task: gather wood, climb wooden -> stone pickaxe, mine cobblestone for a furnace, mine and smelt ~11 iron, craft a chest, craft all five iron tools, then deposit them into the chest. Tests deep tool-tier reasoning, smelting, breadth of crafting, and the store_in_chest skill.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": {
+    "stored": {
+      "iron_sword": 1,
+      "iron_pickaxe": 1,
+      "iron_axe": 1,
+      "iron_shovel": 1,
+      "iron_hoe": 1
+    }
+  },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "cobblestone", "any": ["cobblestone", "cobbled_deepslate"], "count": 11, "label": "Mine cobblestone", "deps": ["wooden_pickaxe"] },
+    { "id": "stone_pickaxe", "item": "stone_pickaxe", "label": "Craft stone pickaxe", "deps": ["cobblestone", "stick", "crafting_table"] },
+    { "id": "furnace", "item": "furnace", "label": "Make a furnace", "deps": ["cobblestone", "crafting_table"] },
+    { "id": "chest", "item": "chest", "label": "Craft a chest", "deps": ["planks", "crafting_table"] },
+    { "id": "raw_iron", "any": ["raw_iron", "iron_ore"], "count": 11, "label": "Mine iron ore", "deps": ["stone_pickaxe"] },
+    { "id": "iron_ingot", "item": "iron_ingot", "count": 11, "label": "Smelt iron ingots", "deps": ["raw_iron", "furnace"] },
+    { "id": "iron_sword", "item": "iron_sword", "label": "Craft iron sword", "deps": ["iron_ingot", "stick", "crafting_table"] },
+    { "id": "iron_pickaxe", "item": "iron_pickaxe", "label": "Craft iron pickaxe", "deps": ["iron_ingot", "stick", "crafting_table"] },
+    { "id": "iron_axe", "item": "iron_axe", "label": "Craft iron axe", "deps": ["iron_ingot", "stick", "crafting_table"] },
+    { "id": "iron_shovel", "item": "iron_shovel", "label": "Craft iron shovel", "deps": ["iron_ingot", "stick", "crafting_table"] },
+    { "id": "iron_hoe", "item": "iron_hoe", "label": "Craft iron hoe", "deps": ["iron_ingot", "stick", "crafting_table"] }
+  ]
+}

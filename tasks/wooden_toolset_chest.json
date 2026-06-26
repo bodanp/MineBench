@@ -1,0 +1,37 @@
+{
+  "id": "wooden_toolset_chest",
+  "title": "Craft a full set of wooden tools and store them in a chest",
+  "goal": "Craft a full set of wooden tools from scratch (wooden_sword, wooden_pickaxe, wooden_axe, wooden_shovel, wooden_hoe), then store all five in a chest.",
+  "difficulty": 3,
+  "max_steps": 120,
+  "rationale": "Long-horizon crafting + storage task: gather wood, craft planks/sticks/table and a chest, craft all five wooden tools, then deposit them into the chest. Tests breadth of crafting (five distinct recipes sharing prerequisites) and the store_in_chest skill.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": {
+    "stored": {
+      "wooden_sword": 1,
+      "wooden_pickaxe": 1,
+      "wooden_axe": 1,
+      "wooden_shovel": 1,
+      "wooden_hoe": 1
+    }
+  },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "chest", "item": "chest", "label": "Craft a chest", "deps": ["planks", "crafting_table"] },
+    { "id": "wooden_sword", "item": "wooden_sword", "label": "Craft wooden sword", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "wooden_axe", "item": "wooden_axe", "label": "Craft wooden axe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "wooden_shovel", "item": "wooden_shovel", "label": "Craft wooden shovel", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "wooden_hoe", "item": "wooden_hoe", "label": "Craft wooden hoe", "deps": ["planks", "stick", "crafting_table"] }
+  ]
+}

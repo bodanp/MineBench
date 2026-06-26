@@ -268,9 +268,10 @@ async function main() {
   const fmt = (v) => (v == null ? 'n/a' : Number(v).toFixed(2))
   const cap = card.capabilities || {}
   const d = card.diagnostics || {}
+  const outcomeLabel = card.review_required ? 'awaiting human review ⏳' : (card.success ? 'success' : 'fail')
   console.log('\n📊 ── Scorecard ──')
   console.log(`   task: ${card.task_id}   model: ${card.model}`)
-  console.log(`   outcome: ${card.success ? 'success' : 'fail'}   progress: ${fmt(card.progress)} (${card.milestones.reached}/${card.milestones.total} milestones)`)
+  console.log(`   outcome: ${outcomeLabel}   progress: ${fmt(card.progress)} (${card.milestones.reached}/${card.milestones.total} milestones)`)
   console.log(`   overall score: ${fmt(card.score)}`)
   console.log('\n   Capability profile (general agentic skills; Minecraft is just the instrument):')
   console.log(`     completion   ${fmt(cap.completion)}   (how far down the dependency chain)`)
@@ -282,6 +283,16 @@ async function main() {
   console.log('\n   Diagnostics (not scored): ' +
     `steps=${d.actions} loops=${d.unproductive_loops} agent_errors=${d.agent_errors} ` +
     `env_errors=${d.env_errors} disturbances=${d.disturbance_events} · time=${card.duration_s}s (informational)`)
+
+  if (card.review_required) {
+    console.log('\n   🔍 This task is HUMAN-reviewed: the bot decided when it was done. No auto pass/fail — please review the build below.')
+  }
+  if (card.build) {
+    const bb = card.build.bounding_box || {}
+    const types = Object.entries(card.build.by_type || {}).map(([k, v]) => `${v}× ${k}`).join(', ')
+    console.log(`   🏠 Build: ${card.build.blocks_placed} blocks placed (${types || 'none'}); ` +
+      `footprint ${bb.dx}×${bb.dz}, ${card.build.levels} level(s) tall.`)
+  }
 
   const file = saveResult(card, trace)
   console.log(`\nSaved result -> ${path.relative(__dirname, file)}`)

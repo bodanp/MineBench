@@ -1,0 +1,22 @@
+{
+  "id": "tiny_wooden_house",
+  "title": "Build a tiny wooden house",
+  "goal": "Build a tiny house out of wooden blocks (planks or logs) near where you spawned. FIRST gather and craft enough material before you start placing — a small house needs roughly 30 wooden blocks, so chop enough logs (about 8) and craft them into planks first so you do not run out partway. THEN build: a finished tiny house must fully ENCLOSE a space at least 3x3 on the ground, with walls at least 2 blocks tall on every side AND a roof covering the top (leaving a 1-block doorway is fine). A few blocks on the ground is NOT a house. Only call stop() once the walls AND the roof are actually complete.",
+  "difficulty": 3,
+  "max_steps": 120,
+  "rationale": "Open-ended building task (human-reviewed). The bot must gather wood, craft planks, and place many blocks into a coherent small structure, deciding for itself when the build is done. Tests long-horizon planning, spatial placement, and self-terminated completion.",
+  "review_note": "Human-reviewed: judge whether the placed blocks form a small, mostly-enclosed wooden house (walls + a roof). The scorecard's build summary lists what was placed.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": { "review": true },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "count": 4, "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "count": 12, "label": "Craft building planks", "deps": ["log"] }
+  ]
+}

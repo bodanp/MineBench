@@ -115,6 +115,34 @@ function readInventory(bot) {
   return inv
 }
 
+// A coordinate radar of the nearest MOB of each type (cows, sheep, zombies, ...), so the model can
+// navigate to or hunt animals a task needs — the same way nearestResources radars blocks and
+// nearbyPlayers radars players. Players and item-drops are excluded. Each entry is tagged with its
+// category ("Passive mobs" / "Hostile mobs") so the bot can tell prey from threats.
+function nearestEntities(bot) {
+  let entitiesByName = null
+  try { entitiesByName = require('minecraft-data')(bot.version).entitiesByName } catch (_) {}
+  const p = bot.entity.position
+  const best = {}
+  for (const e of Object.values(bot.entities || {})) {
+    if (!e || e === bot.entity || !e.position) continue
+    if (e.type === 'player' || e.name === 'item') continue   // players/drops handled elsewhere
+    const name = e.name || e.kind || e.type
+    if (!name) continue
+    const dist = +p.distanceTo(e.position).toFixed(1)
+    if (dist > 32) continue
+    if (best[name] && best[name].dist <= dist) continue       // keep the nearest of each type
+    const meta = entitiesByName && entitiesByName[name]
+    best[name] = {
+      at: { x: Math.round(e.position.x), y: Math.round(e.position.y), z: Math.round(e.position.z) },
+      dist,
+      dir: compass(e.position.x - p.x, e.position.z - p.z),
+      category: (meta && meta.category) || 'mob'
+    }
+  }
+  return best
+}
+
 function buildObservation(bot) {
   const p = bot.entity.position
   return {
@@ -123,12 +151,30 @@ function buildObservation(bot) {
     health: bot.health,
     food: bot.food,
     on_ground: bot.entity.onGround,
+    equipped: bot.heldItem ? bot.heldItem.name : 'empty_hand',
+    armor: readWornArmor(bot),
     inventory: readInventory(bot),
     surroundings: describeSurroundings(bot),
     nearby: nearestResources(bot),
+    nearby_entities: nearestEntities(bot),
     nearby_players: nearbyPlayers(bot),
     time_of_day: bot.time.timeOfDay
   }
 }
 
-module.exports = { buildObservation, readInventory }
+// Armor the bot is currently WEARING (head/torso/legs/feet) plus the off-hand item, as
+// {itemName: count}. Worn armor lives in dedicated armor slots, NOT in bot.inventory.items(), so a
+// "wear a full armor set" goal must read it here (mirrors how the scorer's `worn` predicate checks).
+function readWornArmor(bot) {
+  const worn = {}
+  if (!bot || !bot.inventory) return worn
+  for (const dest of ['head', 'torso', 'legs', 'feet', 'off-hand']) {
+    let slot
+    try { slot = bot.getEquipmentDestSlot(dest) } catch (_) { slot = ({ head: 5, torso: 6, legs: 7, feet: 8, 'off-hand': 45 })[dest] }
+    const it = slot != null ? bot.inventory.slots[slot] : null
+    if (it) worn[it.name] = (worn[it.name] || 0) + it.count
+  }
+  return worn
+}
+
+module.exports = { buildObservation, readInventory, nearestEntities, readWornArmor }

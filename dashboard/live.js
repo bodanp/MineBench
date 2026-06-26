@@ -76,7 +76,7 @@
       case 'ended': return 'finishing…';
       case 'stopped': return 'stopped';
       case 'error': return 'error';
-      case 'done': return run.scorecard && run.scorecard.success ? 'done · success' : 'done';
+      case 'done': return run.scorecard && run.scorecard.review_required ? 'done · review' : (run.scorecard && run.scorecard.success ? 'done · success' : 'done');
       default: return run.status || '';
     }
   }
@@ -178,7 +178,7 @@
     if (run && run.scorecard) {
       const c = run.scorecard;
       scEl.appendChild(h('div', { class: 'sc-grid' },
-        h('div', { class: 'item' }, h('div', { class: 'k', text: 'Result' }), h('div', { class: 'v ' + (c.success ? 'good' : 'bad'), text: c.success ? 'success' : 'fail' })),
+        h('div', { class: 'item' }, h('div', { class: 'k', text: 'Result' }), h('div', { class: 'v ' + (c.review_required ? 'review' : (c.success ? 'good' : 'bad')), text: c.review_required ? 'review' : (c.success ? 'success' : 'fail') })),
         h('div', { class: 'item' }, h('div', { class: 'k', text: 'Score' }), h('div', { class: 'v', text: score3(c.score) })),
         h('div', { class: 'item' }, h('div', { class: 'k', text: 'Steps' }), h('div', { class: 'v', text: String(c.steps) })),
         h('div', { class: 'item' }, h('div', { class: 'k', text: 'Duration' }), h('div', { class: 'v', text: (c.duration_s != null ? c.duration_s + 's' : '—') })),
@@ -422,9 +422,27 @@
       const res = await fetch('/tasks');
       const data = await res.json();
       taskSel.innerHTML = '';
+      // Categorize tasks into <optgroup>s by difficulty for easier browsing. The /tasks endpoint
+      // already sorts by difficulty; tasks without one fall into an "Other" group, shown last.
+      const DIFF_LABELS = {
+        1: 'Difficulty 1 — Beginner', 2: 'Difficulty 2 — Easy', 3: 'Difficulty 3 — Medium',
+        4: 'Difficulty 4 — Hard', 5: 'Difficulty 5 — Expert', 6: 'Difficulty 6 — Master'
+      };
+      const groups = new Map();
       for (const t of (data.tasks || [])) {
-        const label = t.difficulty != null ? `${t.title} (d${t.difficulty})` : t.title;
-        taskSel.appendChild(h('option', { value: t.id, text: label }));
+        const key = (typeof t.difficulty === 'number') ? t.difficulty : 'other';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(t);
+      }
+      const keys = [...groups.keys()].sort((a, b) => (a === 'other') - (b === 'other') || a - b);
+      for (const key of keys) {
+        const label = key === 'other' ? 'Other / uncategorized' : (DIFF_LABELS[key] || `Difficulty ${key}`);
+        taskSel.appendChild(h('optgroup', { label },
+          ...groups.get(key).map(t => h('option', {
+            value: t.id,
+            text: t.max_steps ? `${t.title} · ${t.max_steps} steps` : t.title
+          }))
+        ));
       }
       defaultModelName = data.default_model || '';
       // Model dropdowns are populated from dashboard/models.json (served as model_options),

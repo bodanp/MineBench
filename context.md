@@ -138,17 +138,22 @@ tool-call ids so the next request stays valid.
 
 ### Agent: Observation — `agent/observation.js`
 Turns the live world into the structured state the model perceives. `buildObservation(bot)`
-returns `position`, `facing`, `health`, `food`, `on_ground`, `inventory`, `surroundings`
-(immediate blocks: front/step-up/blocked/standing-on/drop), `nearby` (a coordinate "radar" of
-the nearest notable resource/hazard of each `RADAR_BLOCKS` type, preferring **exposed** blocks
-the bot can actually reach), and `time_of_day`. `readInventory(bot)` returns `{item: count}`.
+returns `position`, `facing`, `health`, `food`, `on_ground`, `equipped` (the item in hand, or
+`empty_hand`), `armor` (worn pieces by slot), `inventory`, `surroundings` (immediate blocks: front/step-up/blocked/standing-on/
+drop), `nearby` (a coordinate "radar" of the nearest notable resource/hazard of each
+`RADAR_BLOCKS` type, preferring **exposed** blocks the bot can actually reach), `nearby_entities`
+(the nearest MOB of each type with `at`/`dist`/`dir`/`category`, via `nearestEntities`),
+`nearby_players` (other players with username + coords), and `time_of_day`. `readInventory(bot)`
+returns `{item: count}`.
 
 ### Agent: Skills — `agent/skills.js`
 The agent's in-world capabilities + the movement reliability layer. Exposes `TOOL_SCHEMAS`
 (OpenAI function schemas the LLM sees), `TOOL_IMPLS` (name → `async (bot, args) => string`),
-and `executeAction(bot, {tool, args}) -> { result, ok, done }`. Tools include `read_data`,
-`look_around`, `move_to`, `move_forward`, `mine_block`, `place_block`, `craft`, `smelt`,
-`equip`, `turn`, `jump`, `chat`, and `stop`. Each impl returns a human-readable string;
+and `executeAction(bot, {tool, args}) -> { result, ok, done }`. Tools include `read_data`
+(item/block/**mob** facts: recipes, drops, `best_tool`/`best_weapon`, and an `obtained_by`
+craft/mine/smelt/hunt index), `look_around`, `move_to`, `move_forward`, `mine_block`, `place_block`,
+`craft`, `smelt`, `equip`, `store_in_chest`, `attack_entity`, `attack_player`, `turn`, `jump`,
+`chat`, and `stop`. Each impl returns a human-readable string;
 strings matching the error regex (`Failed|Unknown|No |Could not|Nothing|Tool .* threw`) are
 scored as failures (`ok: false`). Skills verify outcomes against inventory deltas (e.g.
 `invGain`, `settleInventory`, `waitForSmelt`) rather than assuming an action worked, and

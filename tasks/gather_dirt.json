@@ -1,0 +1,22 @@
+{
+  "id": "gather_dirt",
+  "title": "Gather a stack of dirt",
+  "goal": "Collect at least 12 dirt by digging it up by hand.",
+  "difficulty": 1,
+  "max_steps": 40,
+  "rationale": "Smoke test: navigation + repeatedly gathering a basic hand-mineable building material. A shovel speeds it up but is not required.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": { "inventory": { "dirt": 12 } },
+  "milestones": [
+    { "id": "dirt1", "item": "dirt", "count": 4, "label": "Gather dirt 4/12" },
+    { "id": "dirt2", "item": "dirt", "count": 8, "label": "Gather dirt 8/12", "deps": ["dirt1"] },
+    { "id": "dirt3", "item": "dirt", "count": 12, "label": "Gather dirt 12/12", "deps": ["dirt2"] }
+  ]
+}

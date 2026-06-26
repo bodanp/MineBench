@@ -1,0 +1,39 @@
+{
+  "id": "stone_toolset_chest",
+  "title": "Craft a full set of stone tools and store them in a chest",
+  "goal": "Craft a full set of stone tools from scratch (stone_sword, stone_pickaxe, stone_axe, stone_shovel, stone_hoe), then store all five in a chest.",
+  "difficulty": 4,
+  "max_steps": 160,
+  "rationale": "Long-horizon tech-tier + storage task: gather wood, make a wooden pickaxe, mine cobblestone, craft a chest, craft all five stone tools, then deposit them into the chest. Tests tool-tier reasoning, breadth of crafting, and the store_in_chest skill.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": {
+    "stored": {
+      "stone_sword": 1,
+      "stone_pickaxe": 1,
+      "stone_axe": 1,
+      "stone_shovel": 1,
+      "stone_hoe": 1
+    }
+  },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "cobblestone", "any": ["cobblestone", "cobbled_deepslate"], "count": 11, "label": "Mine cobblestone", "deps": ["wooden_pickaxe"] },
+    { "id": "chest", "item": "chest", "label": "Craft a chest", "deps": ["planks", "crafting_table"] },
+    { "id": "stone_sword", "item": "stone_sword", "label": "Craft stone sword", "deps": ["cobblestone", "stick", "crafting_table"] },
+    { "id": "stone_pickaxe", "item": "stone_pickaxe", "label": "Craft stone pickaxe", "deps": ["cobblestone", "stick", "crafting_table"] },
+    { "id": "stone_axe", "item": "stone_axe", "label": "Craft stone axe", "deps": ["cobblestone", "stick", "crafting_table"] },
+    { "id": "stone_shovel", "item": "stone_shovel", "label": "Craft stone shovel", "deps": ["cobblestone", "stick", "crafting_table"] },
+    { "id": "stone_hoe", "item": "stone_hoe", "label": "Craft stone hoe", "deps": ["cobblestone", "stick", "crafting_table"] }
+  ]
+}

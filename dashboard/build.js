@@ -70,6 +70,9 @@ function toRun(entry) {
     task_id: taskId,
     model: safeModel,
     success: !!sc.success,
+    outcome: sc.outcome || (sc.review_required ? 'review' : (sc.success ? 'success' : 'fail')),
+    review_required: !!sc.review_required,
+    build: sc.build || null,
     score: round(sc.score, 3),
     progress: sc.progress != null ? round(sc.progress, 3) : null,
     capabilities: sc.capabilities || null,
@@ -96,9 +99,12 @@ function uniq(arr) { return [...new Set(arr)] }
 function buildLeaderboard(runs) {
   const byModel = {}
   for (const r of runs) {
-    const m = (byModel[r.model] ||= { model: r.model, runs: 0, successes: 0, scoreSum: 0, progSum: 0, caps: {} })
+    const m = (byModel[r.model] ||= { model: r.model, runs: 0, graded: 0, reviews: 0, successes: 0, scoreSum: 0, progSum: 0, caps: {} })
     m.runs++
-    if (r.success) m.successes++
+    // Human-reviewed (ambiguous) runs are neither pass nor fail, so they are excluded from the
+    // success rate (computed over GRADED runs only) — they still count toward capability averages.
+    if (r.review_required) m.reviews++
+    else { m.graded++; if (r.success) m.successes++ }
     m.scoreSum += Number(r.score) || 0
     m.progSum += Number(r.progress) || 0
     // Average each capability over the runs that actually exercised it (skip nulls — unbiased).
@@ -114,7 +120,8 @@ function buildLeaderboard(runs) {
       model: m.model,
       runs: m.runs,
       successes: m.successes,
-      success_rate: round(m.successes / m.runs, 3),
+      reviews: m.reviews,
+      success_rate: m.graded ? round(m.successes / m.graded, 3) : null,
       avg_score: round(m.scoreSum / m.runs, 3),
       avg_progress: round(m.progSum / m.runs, 3),
       capabilities
@@ -128,12 +135,13 @@ function buildMatrix(runs) {
   const cells = {}
   for (const r of runs) {
     const key = `${r.task_id}|${r.model}`
-    const cell = (cells[key] ||= { runs: 0, success: false, score: 0, runId: null, started_at: null })
+    const cell = (cells[key] ||= { runs: 0, success: false, review_required: false, score: 0, runId: null, started_at: null })
     cell.runs++
     // Prefer the latest run (by started_at) as the cell's representative.
     if (!cell.started_at || (r.started_at && r.started_at > cell.started_at)) {
       cell.started_at = r.started_at
       cell.success = r.success
+      cell.review_required = r.review_required
       cell.score = r.score
       cell.runId = r.id
     }
@@ -146,7 +154,8 @@ function build() {
   const runs = raw.map(toRun)
     .sort((a, b) => String(b.started_at || '').localeCompare(String(a.started_at || '')))
 
-  const successes = runs.filter(r => r.success).length
+  const gradedRuns = runs.filter(r => !r.review_required)
+  const successes = gradedRuns.filter(r => r.success).length
   const data = {
     generated_at: new Date().toISOString(),
     capability_labels: {
@@ -158,7 +167,8 @@ function build() {
       runs: runs.length,
       models: uniq(runs.map(r => r.model)).length,
       tasks: uniq(runs.map(r => r.task_id)).length,
-      success_rate: runs.length ? round(successes / runs.length, 3) : 0
+      reviews: runs.length - gradedRuns.length,
+      success_rate: gradedRuns.length ? round(successes / gradedRuns.length, 3) : 0
     },
     leaderboard: buildLeaderboard(runs),
     matrix: buildMatrix(runs),

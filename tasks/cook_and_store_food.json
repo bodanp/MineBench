@@ -1,0 +1,32 @@
+{
+  "id": "cook_and_store_food",
+  "title": "Cook a stockpile of steak and store it in a chest",
+  "goal": "Cook at least 5 steak (cooked_beef) and store all of them in a chest.",
+  "difficulty": 4,
+  "max_steps": 150,
+  "rationale": "Combines FURNACE COOKING with CHEST STORAGE: gather wood, make a wooden pickaxe, mine cobblestone for a furnace, craft a chest, hunt cows and cook their beef, then deposit the cooked steak into the chest. Tests hunting, smelting, and the store_in_chest skill together.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true,
+    "summon": [
+      { "entity": "cow", "count": 8, "offset": [3, 0, 2] }
+    ]
+  },
+  "success": { "stored": { "cooked_beef": 5 } },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "cobblestone", "any": ["cobblestone", "cobbled_deepslate"], "count": 8, "label": "Mine cobblestone", "deps": ["wooden_pickaxe"] },
+    { "id": "furnace", "item": "furnace", "label": "Make a furnace", "deps": ["cobblestone", "crafting_table"] },
+    { "id": "chest", "item": "chest", "label": "Craft a chest", "deps": ["planks", "crafting_table"] },
+    { "id": "beef", "item": "beef", "count": 5, "label": "Hunt cows for beef" },
+    { "id": "cooked_beef", "item": "cooked_beef", "count": 5, "label": "Cook the beef", "deps": ["beef", "furnace"] }
+  ]
+}

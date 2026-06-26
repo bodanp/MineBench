@@ -1,0 +1,39 @@
+{
+  "id": "leather_armor",
+  "title": "Craft and wear a full leather armor set",
+  "goal": "Craft a full set of leather armor from scratch (leather_helmet, leather_chestplate, leather_leggings, leather_boots), then EQUIP all four pieces so you are wearing the complete set.",
+  "difficulty": 4,
+  "max_steps": 180,
+  "rationale": "Long-horizon resource + crafting + equip task. The bot must gather wood for a crafting table, hunt cows for ~24 leather, craft all four armor pieces, then equip (wear) each one. Tests mob perception/combat, long-horizon planning, and equipping armor to the correct slots.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true,
+    "summon": [
+      { "entity": "cow", "count": 10, "offset": [3, 0, 3] },
+      { "entity": "cow", "count": 10, "offset": [3, 0, -3] },
+      { "entity": "cow", "count": 10, "offset": [-3, 0, 3] }
+    ]
+  },
+  "success": {
+    "worn": {
+      "leather_helmet": 1,
+      "leather_chestplate": 1,
+      "leather_leggings": 1,
+      "leather_boots": 1
+    }
+  },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "leather", "item": "leather", "count": 24, "label": "Hunt cows for leather" },
+    { "id": "leather_helmet", "item": "leather_helmet", "label": "Craft leather helmet", "deps": ["leather", "crafting_table"] },
+    { "id": "leather_chestplate", "item": "leather_chestplate", "label": "Craft leather chestplate", "deps": ["leather", "crafting_table"] },
+    { "id": "leather_leggings", "item": "leather_leggings", "label": "Craft leather leggings", "deps": ["leather", "crafting_table"] },
+    { "id": "leather_boots", "item": "leather_boots", "label": "Craft leather boots", "deps": ["leather", "crafting_table"] }
+  ]
+}

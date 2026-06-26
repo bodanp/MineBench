@@ -1,0 +1,26 @@
+{
+  "id": "craft_torches",
+  "title": "Craft a handful of torches",
+  "goal": "Craft at least 4 torches from scratch.",
+  "difficulty": 2,
+  "max_steps": 60,
+  "rationale": "Short tool-tier task: gather wood, craft a wooden pickaxe, mine coal, and combine coal with a stick into torches. Tests an early mining tier and a simple non-table recipe (light).",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": { "inventory": { "torch": 4 } },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "coal", "any": ["coal", "charcoal"], "label": "Get coal", "deps": ["wooden_pickaxe"] },
+    { "id": "torch", "item": "torch", "count": 4, "label": "Craft torches", "deps": ["coal", "stick"] }
+  ]
+}

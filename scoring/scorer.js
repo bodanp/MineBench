@@ -31,9 +31,14 @@
 //   score(trace, task)        -> scorecard
 //
 // Success DSL (v1): task.success = { "inventory": { "<item>": <minCount>, ... },
-//                                    "killed_player": "<username>" | ["<username>", ...] }
-// Multiple keys are AND-ed. Extend here (placed/reach/etc.) as new task types appear — keep it
-// declarative so the Tasks owner (Role 5) never has to write engine code.
+//                                    "killed_player": "<username>" | ["<username>", ...],
+//                                    "stored":  { "<item>": <minCount>, ... },   // DEPOSITED in a chest
+//                                    "worn":    { "<item>": <minCount>, ... },   // EQUIPPED (worn armor)
+//                                    "review":  true }                            // human-judged outcome
+// Multiple keys are AND-ed. `review:true` is special: an ambiguous/subjective task (e.g. "build a
+// house") is graded by a HUMAN, so the harness never auto-passes OR auto-fails it — the bot decides
+// when it is done (it calls stop()) and the scorer marks the outcome 'review'. Extend here
+// (reach/etc.) as new task types appear — keep it declarative so the Tasks owner never writes engine code.
 // ─────────────────────────────────────────────
 
 const { getMilestones, reachedCount, matchesItem } = require('./milestones')
@@ -43,6 +48,11 @@ function checkSuccess(state, task) {
   if (!spec || typeof spec !== 'object') return false
   // No criteria (e.g. an ad-hoc goal) can never auto-succeed — there is nothing to verify.
   if (Object.keys(spec).length === 0) return false
+
+  // Ambiguous, human-reviewed tasks (e.g. "build a house") are NEVER auto-passed or auto-failed:
+  // the bot decides when it is done (it calls stop()) and a human judges the build afterwards. So
+  // the harness must not claim success — the scorer reports outcome 'review' instead.
+  if (spec.review === true) return false
 
   if (spec.inventory) {
     const inv = (state && state.inventory) || {}
@@ -58,6 +68,26 @@ function checkSuccess(state, task) {
     const need = Array.isArray(spec.killed_player) ? spec.killed_player : [spec.killed_player]
     const killed = (state && state.killed_players) || []
     if (!need.every(n => killed.includes(n))) return false
+  }
+
+  // stored: items the bot must have DEPOSITED into a chest (not merely held). Storing an item in a
+  // chest empties it from the inventory, so an inventory check would FAIL the moment it succeeds —
+  // the harness tracks verified deposits in state.stored, which is the only correct signal here.
+  if (spec.stored) {
+    const stored = (state && state.stored) || {}
+    for (const [item, min] of Object.entries(spec.stored)) {
+      if ((stored[item] || 0) < min) return false
+    }
+  }
+
+  // worn: armor the bot must be WEARING (equipped to its armor slot), not merely holding. Worn
+  // armor lives in the armor slots, not the inventory, so state.worn (read from those slots) is the
+  // only correct signal for a "craft and wear a full set" task.
+  if (spec.worn) {
+    const worn = (state && state.worn) || {}
+    for (const [item, min] of Object.entries(spec.worn)) {
+      if ((worn[item] || 0) < min) return false
+    }
   }
 
   return true
@@ -127,6 +157,54 @@ function achievedSet(milestones, held) {
   return achieved
 }
 
+// ---- build artifact (for human-reviewed structure tasks) ---------------------------------------
+// Reconstruct what the bot PLACED in the world from the trace: every successful place_block step
+// recorded the bot's position plus the (dx,dy,dz) offset, so a placed block's coord = round(pos) +
+// offset. This is a REVIEW AID (so a human can see what was built), never an auto-pass signal.
+function reconstructPlacements(steps) {
+  const out = []
+  for (const s of (steps || [])) {
+    const a = s && s.action
+    if (!a || a.tool !== 'place_block' || s.ok === false) continue
+    const args = a.args || {}
+    const name = args.block_type
+    if (!name) continue
+    const p = Array.isArray(s.pos) ? s.pos : [0, 0, 0]
+    out.push({
+      name: String(name).replace(/^minecraft:/, ''),
+      x: Math.round((p[0] || 0) + (args.dx || 0)),
+      y: Math.round((p[1] || 0) + (args.dy || 0)),
+      z: Math.round((p[2] || 0) + (args.dz || 0))
+    })
+  }
+  return out
+}
+
+// Summarise placements into a compact, human-readable description of the structure built.
+function summarizeBuild(placements) {
+  if (!placements || !placements.length) return null
+  const byType = {}
+  const cells = new Set()
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
+  for (const b of placements) {
+    byType[b.name] = (byType[b.name] || 0) + 1
+    cells.add(`${b.x},${b.y},${b.z}`)
+    if (b.x < minX) minX = b.x
+    if (b.x > maxX) maxX = b.x
+    if (b.y < minY) minY = b.y
+    if (b.y > maxY) maxY = b.y
+    if (b.z < minZ) minZ = b.z
+    if (b.z > maxZ) maxZ = b.z
+  }
+  return {
+    blocks_placed: placements.length,
+    distinct_cells: cells.size,
+    by_type: byType,
+    bounding_box: { dx: maxX - minX + 1, dy: maxY - minY + 1, dz: maxZ - minZ + 1 },
+    levels: maxY - minY + 1
+  }
+}
+
 function score(trace, task) {
   const steps = (trace && trace.steps) || []
   const milestones = getMilestones(task)
@@ -150,8 +228,19 @@ function score(trace, task) {
   const goalNode = milestones.length ? milestones[milestones.length - 1] : null
   const goalReached = goalNode ? reachedCount(maxHeld, goalNode) >= goalNode.count : false
 
-  const success = trace.ended_reason === 'success' ||
-    checkSuccess(trace.final_state || { inventory: {} }, task) || goalReached
+  // Grading mode. Ambiguous tasks (success.review) are HUMAN-judged — never auto pass/fail.
+  const spec = (task && task.success) || {}
+  const isReview = spec.review === true
+  // The maxHeld "goal item" fallback only makes sense when success IS holding that item. Tasks
+  // graded on a world effect (stored in a chest) must NOT use it — otherwise crafting the milestone
+  // sink (e.g. one armor piece) would falsely pass before anything was actually stored away.
+  const inventoryGoal = !isReview && Object.keys(spec).every(k => k === 'inventory' || k === 'killed_player')
+  const autoPass = !isReview && checkSuccess(trace.final_state || { inventory: {} }, task)
+  const success = !isReview && (trace.ended_reason === 'success' || autoPass || (goalReached && inventoryGoal))
+  const outcome = isReview ? 'review' : (success ? 'success' : 'fail')
+
+  // Build artifact (review aid): what did the bot construct? Reconstructed from place_block steps.
+  const build = summarizeBuild(reconstructPlacements(steps))
 
   // ---- walk the action steps once, gathering every signal -----------------------------------
   const actSteps = steps.filter(s => s.action)
@@ -285,6 +374,9 @@ function score(trace, task) {
     task_id: task.id,
     model: trace.model,
     success,
+    outcome,
+    review_required: isReview,
+    ...(build ? { build } : {}),
     score: scoreVal,
     progress: r3(completion),
     milestones: { reached, total: milestones.length, list: mList },
@@ -310,4 +402,4 @@ function score(trace, task) {
   }
 }
 
-module.exports = { checkSuccess, score, ENV_ERROR_RE }
+module.exports = { checkSuccess, score, ENV_ERROR_RE, reconstructPlacements, summarizeBuild }

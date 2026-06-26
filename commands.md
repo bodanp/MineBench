@@ -61,7 +61,7 @@ Run in the server console (or as an op'd player) to grant night vision that neve
 ## Flags reference
 | Flag | Meaning |
 |------|---------|
-| `--task <id>` | Run a task from `tasks/*.json` (auto-scored). |
+| `--task <id>` | Run a task from `tasks/*.json` (auto-scored, unless it is `review`-graded — see Task types). |
 | `--goal "<text>"` | Free-form ad-hoc goal (no auto success check). |
 | `--model <name>` | Single model, e.g. `copilot/gpt-4.1`, `gpt-4o`. |
 | `--model-a` / `--model-b` | Head-to-head: one model per bot. |
@@ -69,6 +69,21 @@ Run in the server console (or as an op'd player) to grant night vision that neve
 | `--reset` | Wipe world(s) and regenerate from the seed before running. |
 | `--no-server` | Don't auto-launch; connect to a server you're managing yourself. |
 | `--verbose` | Stream agent thoughts to the console. |
+
+## Task types & grading
+Tasks in `tasks/*.json` are graded one of two ways (see `scoring/scorer.js`):
+- **Auto-graded** — a verifiable `success` spec. Keys are AND-ed: `inventory` (hold items),
+  `stored` (items *deposited in a chest* via the `store_in_chest` skill), `worn` (armor *equipped*
+  to its slot via `equip`), `killed_player`.
+- **Human-reviewed** — `"success": { "review": true }` for ambiguous/creative goals (e.g. the
+  `tiny_house` builds). The bot decides when it is done (it calls `stop()`); the harness never
+  auto-passes or auto-fails it. The scorecard reports **outcome: review** plus a reconstructed
+  **build summary** of the blocks it placed, for a human to judge.
+
+```bash
+npm run bench -- --task leather_armor_chest --model copilot/gpt-5.4   # auto-graded (stored in a chest)
+npm run bench -- --task tiny_wooden_house --model copilot/gpt-5.4     # human-reviewed build
+```
 
 ## Notes
 - Copilot models need `COPILOT_TOKEN` in `.env`.

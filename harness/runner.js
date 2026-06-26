@@ -21,7 +21,7 @@ require('dotenv').config()
 const mineflayer = require('mineflayer')
 const { pathfinder } = require('mineflayer-pathfinder')
 
-const { buildObservation, readInventory } = require('../agent/observation')
+const { buildObservation, readInventory, readWornArmor } = require('../agent/observation')
 const { TOOL_SCHEMAS, executeAction } = require('../agent/skills')
 const { createAgent } = require('../agent/brain')
 const { applyTaskSetup } = require('./env')
@@ -254,13 +254,13 @@ async function run({ task, model, log = console.log, verbose = false, onEvent, i
       emit({ type: 'step', i: step + 1, max_steps: maxSteps, thought: decision.thought, action: { tool: decision.tool, args: decision.args }, result, ok, pos, inventory: readInventory(bot) })
 
       // Harness-owned success detection (don't trust the model's stop()).
-      if (checkSuccess({ inventory: readInventory(bot), killed_players: [...killedPlayers] }, task)) { endReason = 'success'; break }
+      if (checkSuccess({ inventory: readInventory(bot), killed_players: [...killedPlayers], stored: bot._storedItems || {}, worn: readWornArmor(bot) }, task)) { endReason = 'success'; break }
       if (botDied) { endReason = 'died'; break }
       if (done) { endReason = 'agent_stop'; break }
     }
 
     trace.ended_reason = endReason
-    trace.final_state = { inventory: readInventory(bot), killed_players: [...killedPlayers] }
+    trace.final_state = { inventory: readInventory(bot), killed_players: [...killedPlayers], stored: bot._storedItems || {}, worn: readWornArmor(bot) }
     emit({ type: 'run_end', ended_reason: endReason, duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
   } catch (e) {
     // A death that aborts an in-flight action (we call bot.quit() the instant the bot dies) can

@@ -9,7 +9,7 @@
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
-const { score } = require('./scorer')
+const { score, reconstructPlacements, summarizeBuild } = require('./scorer')
 const { getMilestones, validateMilestones } = require('./milestones')
 
 const loadTask = (id) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tasks', `${id}.json`), 'utf8'))
@@ -135,6 +135,105 @@ ok('validateMilestones catches dangling deps and duplicate ids', () => {
   assert.ok(dangling.some(e => /unknown id "ghost"/.test(e)), 'reports dangling dep')
   const dup = validateMilestones({ milestones: [{ id: 'a', item: 'x' }, { id: 'a', item: 'y' }] })
   assert.ok(dup.some(e => /duplicate milestone id/.test(e)), 'reports duplicate id')
+})
+
+// 10. "store it in a chest" tasks pass ONLY on a verified deposit — merely CRAFTING the item (even
+//     holding all of it) must not pass, because storing empties it from the inventory. This also
+//     guards the goalReached fallback from leaking a false pass on world-effect tasks.
+ok('stored predicate: crafting is not storing; only a chest deposit passes', () => {
+  const task = loadTask('wooden_toolset_chest')
+  const tools = ['wooden_sword', 'wooden_pickaxe', 'wooden_axe', 'wooden_shovel', 'wooden_hoe']
+  const held = Object.fromEntries(tools.map(t => [t, 1]))
+  const craftedNotStored = {
+    model: 'm', ended_reason: 'max_steps', duration_s: 1,
+    final_state: { inventory: held, stored: {} },
+    steps: tools.map(p => ({ action: { tool: 'craft', args: { item: p } }, ok: true, result: `Crafted 1x ${p}.`, observation: { inventory: { oak_planks: 20 } }, pos: [0, 64, 0] }))
+  }
+  const c1 = score(craftedNotStored, task)
+  assert.strictEqual(c1.success, false, 'holding the full set is NOT storing it')
+  assert.strictEqual(c1.outcome, 'fail')
+
+  const deposited = {
+    model: 'm', ended_reason: 'agent_stop', duration_s: 1,
+    final_state: { inventory: {}, stored: held },
+    steps: []
+  }
+  const c2 = score(deposited, task)
+  assert.strictEqual(c2.success, true, 'all five deposited in a chest -> success')
+  assert.strictEqual(c2.outcome, 'success')
+})
+
+// 10b. "wear a full armor set" tasks pass ONLY when the armor is actually WORN (in the armor slots),
+//      not merely crafted/held — worn armor is not in the inventory, and the goalReached fallback
+//      must not leak a pass from holding the milestone-sink piece.
+ok('worn predicate: crafting armor is not wearing it; only equipping passes', () => {
+  const task = loadTask('leather_armor')
+  const pieces = ['leather_helmet', 'leather_chestplate', 'leather_leggings', 'leather_boots']
+  const held = Object.fromEntries(pieces.map(p => [p, 1]))
+  const craftedNotWorn = {
+    model: 'm', ended_reason: 'max_steps', duration_s: 1,
+    final_state: { inventory: held, worn: {} },
+    steps: pieces.map(p => ({ action: { tool: 'craft', args: { item: p } }, ok: true, result: `Crafted 1x ${p}.`, observation: { inventory: { leather: 24 } }, pos: [0, 64, 0] }))
+  }
+  const c1 = score(craftedNotWorn, task)
+  assert.strictEqual(c1.success, false, 'holding the armor is NOT wearing it')
+  assert.strictEqual(c1.outcome, 'fail')
+
+  const worn = {
+    model: 'm', ended_reason: 'agent_stop', duration_s: 1,
+    final_state: { inventory: {}, worn: held },
+    steps: []
+  }
+  const c2 = score(worn, task)
+  assert.strictEqual(c2.success, true, 'all four worn -> success')
+  assert.strictEqual(c2.outcome, 'success')
+})
+
+// 11. Ambiguous tasks (success.review) are HUMAN-judged: never auto pass/fail, and a build artifact
+//     is reconstructed from the placements so a reviewer can see what was built.
+ok('review tasks never auto pass/fail and emit a build artifact', () => {
+  const task = loadTask('tiny_house')
+  const t = {
+    model: 'm', ended_reason: 'agent_stop', duration_s: 1,
+    final_state: { inventory: { dirt: 3 } },
+    steps: [
+      { action: { tool: 'place_block', args: { block_type: 'dirt', dx: 1, dy: 0, dz: 0 } }, ok: true, result: 'Placed dirt.', observation: { inventory: { dirt: 12 } }, pos: [10, 64, 10] },
+      { action: { tool: 'place_block', args: { block_type: 'minecraft:dirt', dx: 1, dy: 1, dz: 0 } }, ok: true, result: 'Placed dirt.', observation: { inventory: { dirt: 11 } }, pos: [10, 64, 10] }
+    ]
+  }
+  const c = score(t, task)
+  assert.strictEqual(c.success, false, 'review tasks never auto-succeed')
+  assert.strictEqual(c.outcome, 'review')
+  assert.strictEqual(c.review_required, true)
+  assert.ok(c.build && c.build.blocks_placed === 2, 'build artifact reconstructed from placements')
+  assert.strictEqual(c.build.levels, 2, 'two stacked blocks span two levels')
+})
+
+// 12. Build reconstruction counts only SUCCESSFUL place_block steps (failed places / other tools out).
+ok('build reconstruction ignores failed places and non-place tools', () => {
+  const steps = [
+    { action: { tool: 'place_block', args: { block_type: 'oak_planks', dx: 1, dy: 0, dz: 0 } }, ok: true, pos: [0, 64, 0] },
+    { action: { tool: 'place_block', args: { block_type: 'oak_planks', dx: 2, dy: 0, dz: 0 } }, ok: false, pos: [0, 64, 0] },
+    { action: { tool: 'mine_block', args: { block_type: 'oak_log' } }, ok: true, pos: [0, 64, 0] }
+  ]
+  const placed = reconstructPlacements(steps)
+  assert.strictEqual(placed.length, 1, 'only the successful place_block counts')
+  const b = summarizeBuild(placed)
+  assert.strictEqual(b.blocks_placed, 1)
+  assert.strictEqual(b.by_type.oak_planks, 1)
+  assert.strictEqual(summarizeBuild([]), null, 'no placements -> no build artifact')
+})
+
+// 13. Every shipped task file parses and declares a well-formed milestone DAG (covers new tasks too).
+ok('every task file parses and has a well-formed milestone DAG', () => {
+  const dir = path.join(__dirname, '..', 'tasks')
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'))
+  assert.ok(files.length >= 1, 'there are task files')
+  for (const f of files) {
+    let task
+    assert.doesNotThrow(() => { task = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) }, `${f} is valid JSON`)
+    assert.deepStrictEqual(validateMilestones(task), [], `${f} milestones are well-formed`)
+  }
 })
 
 console.log(`\n${passed} checks passed.`)

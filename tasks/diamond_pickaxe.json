@@ -1,0 +1,32 @@
+{
+  "id": "diamond_pickaxe",
+  "title": "Make a diamond pickaxe from scratch",
+  "goal": "Make a diamond_pickaxe from scratch.",
+  "difficulty": 6,
+  "max_steps": 300,
+  "rationale": "Endgame long-horizon task: climb the full tool tree (wooden -> stone -> iron pickaxe), then mine deep for diamonds and craft a diamond pickaxe. Diamonds only drop to an iron-or-better pickaxe and sit deep underground, so this tests very deep planning, smelting, and sustained progress.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true
+  },
+  "success": { "inventory": { "diamond_pickaxe": 1 } },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "stick", "item": "stick", "label": "Craft sticks", "deps": ["planks"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wooden_pickaxe", "item": "wooden_pickaxe", "label": "Craft wooden pickaxe", "deps": ["planks", "stick", "crafting_table"] },
+    { "id": "cobblestone", "any": ["cobblestone", "cobbled_deepslate"], "count": 11, "label": "Mine cobblestone", "deps": ["wooden_pickaxe"] },
+    { "id": "stone_pickaxe", "item": "stone_pickaxe", "label": "Craft stone pickaxe", "deps": ["cobblestone", "stick", "crafting_table"] },
+    { "id": "furnace", "item": "furnace", "label": "Make a furnace", "deps": ["cobblestone", "crafting_table"] },
+    { "id": "raw_iron", "any": ["raw_iron", "iron_ore"], "count": 3, "label": "Mine iron ore", "deps": ["stone_pickaxe"] },
+    { "id": "iron_ingot", "item": "iron_ingot", "count": 3, "label": "Smelt iron ingots", "deps": ["raw_iron", "furnace"] },
+    { "id": "iron_pickaxe", "item": "iron_pickaxe", "label": "Craft iron pickaxe", "deps": ["iron_ingot", "stick", "crafting_table"] },
+    { "id": "diamond", "item": "diamond", "count": 3, "label": "Mine diamonds", "deps": ["iron_pickaxe"] },
+    { "id": "diamond_pickaxe", "item": "diamond_pickaxe", "label": "Craft diamond pickaxe", "deps": ["diamond", "stick", "crafting_table"] }
+  ]
+}

@@ -158,8 +158,10 @@
           tr.appendChild(h('td', { class: 'empty-cell', text: '—' }));
           continue;
         }
-        const td = h('td', { class: 'cell ' + (cell.success ? 'success' : 'fail'), onclick: () => openRun(cell.runId) },
-          h('span', { class: 'cell-mark ' + (cell.success ? 'ok' : 'err'), text: cell.success ? '✓ ' : '✗ ' }),
+        const cellOutcome = cell.review_required ? 'review' : (cell.success ? 'success' : 'fail');
+        const cellMark = cell.review_required ? { c: 'rev', t: '🔍 ' } : (cell.success ? { c: 'ok', t: '✓ ' } : { c: 'err', t: '✗ ' });
+        const td = h('td', { class: 'cell ' + cellOutcome, onclick: () => openRun(cell.runId) },
+          h('span', { class: 'cell-mark ' + cellMark.c, text: cellMark.t }),
           h('span', { class: 'cell-score', text: score3(cell.score) }),
           cell.runs > 1 ? h('span', { class: 'pill-count', text: `×${cell.runs}` }) : null
         );
@@ -291,7 +293,7 @@
       const tr = h('tr', { class: 'clickable', onclick: () => openRun(r.id) },
         h('td', { text: r.task_id }),
         h('td', { class: 'model-cell', text: r.model }),
-        h('td', { class: 'num' }, h('span', { class: 'badge ' + (r.success ? 'ok' : 'err'), text: r.success ? 'success' : 'fail' })),
+        h('td', { class: 'num' }, h('span', { class: 'badge ' + (r.review_required ? 'rev' : (r.success ? 'ok' : 'err')), text: r.review_required ? 'review' : (r.success ? 'success' : 'fail') })),
         h('td', { class: 'num', text: score3(r.score) }),
         h('td', { class: 'num', text: r.progress == null ? '—' : score3(r.progress) }),
         h('td', { class: 'num', text: String(r.steps) }),
@@ -331,7 +333,7 @@
     body.appendChild(h('div', { class: 'sub', text: `${run.model} · started ${fmtDate(run.started_at)}` }));
 
     const summary = [
-      ['Result', run.success ? 'success' : 'fail'],
+      ['Result', run.review_required ? 'review (human-judged)' : (run.success ? 'success' : 'fail')],
       ['Score', score3(run.score)],
       ['Progress', run.progress == null ? '—' : score3(run.progress)],
       ['Steps', String(run.steps)],
