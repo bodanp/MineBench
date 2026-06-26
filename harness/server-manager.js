@@ -35,8 +35,10 @@ const USERNAME_A = process.env.MC_BOT_USERNAME_A || 'MineBenchBotA'
 const USERNAME_B = process.env.MC_BOT_USERNAME_B || 'MineBenchBotB'
 
 // Server instances. B's dir derives from A's (so an env override of A moves B with it); ports
-// and dirs are all individually overridable so this isn't machine-specific.
-const A_DIR = process.env.MINEBENCH_SERVER_A_DIR || 'C:\\hackathon\\minebench-server'
+// and dirs are all individually overridable so this isn't machine-specific. The default is
+// repo-relative (<repo>/minebench-server) rather than a hard-coded absolute path, so a fresh
+// clone works the same on any OS without setting MINEBENCH_SERVER_A_DIR.
+const A_DIR = process.env.MINEBENCH_SERVER_A_DIR || path.join(__dirname, '..', 'minebench-server')
 const SERVERS = {
   A: { dir: A_DIR, port: parseInt(process.env.MINEBENCH_SERVER_A_PORT || '25565', 10) },
   B: { dir: process.env.MINEBENCH_SERVER_B_DIR || `${A_DIR}-b`, port: parseInt(process.env.MINEBENCH_SERVER_B_PORT || '25566', 10) }
@@ -171,9 +173,18 @@ async function ensureServer(key, { log = console.log } = {}) {
   return cfg
 }
 
+// Write a SINGLE console command to a server we started. Embedded CR/LF are collapsed to spaces
+// so an untrusted argument (e.g. a dashboard goal relayed via `say [GOAL] …`) can't smuggle extra
+// console commands such as a trailing `stop`. Returns true only if the command was actually
+// written — false when we merely adopted the server (we don't own its stdin) or there's nothing
+// to send — so callers can tell whether it was delivered.
 function sendCommand(port, cmd) {
   const e = procs.get(port)
-  if (e && e.proc.stdin && e.proc.stdin.writable) e.proc.stdin.write(cmd.replace(/\n?$/, '\n'))
+  if (!e || !e.proc.stdin || !e.proc.stdin.writable) return false
+  const line = String(cmd || '').replace(/[\r\n]+/g, ' ').trim()
+  if (!line) return false
+  e.proc.stdin.write(line + '\n')
+  return true
 }
 
 async function stopServer(port, { log = console.log } = {}) {

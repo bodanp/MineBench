@@ -53,7 +53,7 @@ function adHocTask(goal) {
     id: 'adhoc',
     title: 'Ad-hoc goal',
     goal,
-    max_steps: parseInt(process.env.MAX_STEPS || '60'),
+    max_steps: parseInt(process.env.MAX_STEPS || '60', 10),
     setup: {
       gamerules: { doDaylightCycle: false, doWeatherCycle: false, doMobSpawning: false, keepInventory: true },
       time: 'day', weather: 'clear', clear_inventory: false
@@ -70,7 +70,7 @@ function interactiveTask() {
     id: 'interactive',
     title: 'Interactive session',
     goal: '',
-    max_steps: parseInt(process.env.MAX_STEPS || '60'),
+    max_steps: parseInt(process.env.MAX_STEPS || '60', 10),
     setup: {
       gamerules: { doDaylightCycle: false, doWeatherCycle: false, doMobSpawning: false, keepInventory: true },
       time: 'day', weather: 'clear', clear_inventory: false
@@ -168,9 +168,10 @@ async function waitForResults({ sinceMs, sides, maxWaitMs }) {
   return null
 }
 
-async function runDual(args, task, goal, modelA, modelB) {
+async function runDual(args, { taskA, taskB }, goal, modelA, modelB) {
   // Generous wait: ~step budget at a slow pace, plus spawn/setup buffer. Overridable via env.
-  const maxWaitMs = parseInt(process.env.DUAL_WAIT_MS || String((task.max_steps || 60) * 15000 + 120000))
+  // Budget off the LONGER of the two sides so neither bot is cut short on an asymmetric run.
+  const maxWaitMs = parseInt(process.env.DUAL_WAIT_MS || String(Math.max(taskA.max_steps || 60, taskB.max_steps || 60) * 15000 + 120000), 10)
   const world = args.world === 'same' ? 'same' : 'different'
 
   // One call resolves the whole server config: provisions/boots the right server(s), applies the
@@ -184,13 +185,13 @@ async function runDual(args, task, goal, modelA, modelB) {
   }
   const sinceMs = Date.now()
 
-  console.log(`\n▶ Dual run on task "${task.id}" (${world} world):`)
-  console.log(`   A: ${modelA}  (port ${targets[0].port}, ${targets[0].username})`)
-  console.log(`   B: ${modelB}  (port ${targets[1].port}, ${targets[1].username})`)
+  console.log(`\n▶ Dual run (${world} world):`)
+  console.log(`   A: ${modelA}  on "${taskA.id}"  (port ${targets[0].port}, ${targets[0].username})`)
+  console.log(`   B: ${modelB}  on "${taskB.id}"  (port ${targets[1].port}, ${targets[1].username})`)
 
   closePreviousBotWindows()   // tidy up windows from a previous dual run before opening new ones
-  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-A: ${modelA}`, username: targets[0].username, port: targets[0].port, childArgs: childArgsFor(args, task.id, goal, modelA) })
-  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-B: ${modelB}`, username: targets[1].username, port: targets[1].port, childArgs: childArgsFor(args, task.id, goal, modelB) })
+  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-A: ${modelA}`, username: targets[0].username, port: targets[0].port, childArgs: childArgsFor(args, taskA.id, goal, modelA) })
+  spawnBotWindow({ title: `${BOT_WINDOW_PREFIX}-B: ${modelB}`, username: targets[1].username, port: targets[1].port, childArgs: childArgsFor(args, taskB.id, goal, modelB) })
 
   console.log('\nOpened two bot windows. Waiting for both to finish...')
   console.log('(Each window stays open so you can read its logs; close them when done.)')

@@ -78,7 +78,7 @@ function startRun(e, lane) {
     max_steps: e.max_steps || (runs[lane] && runs[lane].max_steps) || null,
     started_at: e.started_at || new Date().toISOString(),
     steps: [],
-    latest_inventory: e.inventory || null,
+    latest_inventory: e.inventory || (runs[lane] && runs[lane].latest_inventory) || null,
     ended_reason: null,
     duration_s: null,
     final_inventory: null,
@@ -237,6 +237,13 @@ function launchRun(cfg) {
 }
 
 function spawnChildren({ cfg, lanes, targets, isH2H, isInteractive }) {
+  // If the user clicked Stop while servers were still being prepared (cold boot can take ~a
+  // minute), the run was cancelled before any child existed — don't spawn the bots now.
+  if (stoppedByUser) {
+    for (const lane of lanes) if (runs[lane] && runs[lane].status === 'launching') { runs[lane].status = 'stopped'; runs[lane].ended_reason = 'stopped_by_user' }
+    broadcast({ type: 'run_exit', reason: 'stopped' })
+    return
+  }
   const baseEnv = { ...process.env, MINEBENCH_LIVE_PORT: String(PORT), MINEBENCH_LIVE: '1' }
   for (let i = 0; i < lanes.length; i++) {
     const lane = lanes[i]
@@ -304,17 +311,27 @@ function wireChild(lane, proc) {
 // (Only works for servers WE started — an externally-pre-started server can't take console
 // commands, so in that case the human types the goal in-game instead.)
 function deliverPrompt(goal) {
-  const g = String(goal || '').trim().slice(0, 500)
+  const g = String(goal || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 500)
   if (!g) return { ok: false, code: 400, error: 'Empty goal.' }
   if (!interactive) return { ok: false, code: 409, error: 'The current run is not interactive.' }
   const ports = [...new Set(runTargets.map(t => t.port))]
   if (!ports.length) return { ok: false, code: 409, error: 'No interactive server is ready yet.' }
-  for (const p of ports) sm.sendCommand(p, `say [GOAL] ${g}`)
-  return { ok: true, ports: ports.length }
+  let delivered = 0
+  for (const p of ports) if (sm.sendCommand(p, `say [GOAL] ${g}`)) delivered++
+  if (!delivered) return { ok: false, code: 409, error: 'Could not reach the server console (it may be externally managed). Type the goal in the in-game chat instead.' }
+  return { ok: true, ports: delivered }
 }
 
 function stopRun() {
-  if (!benchProcs.length) return { ok: false, code: 409, error: 'No run is in progress.' }
+  // Stop during the async server-prep phase (cold boot ~50-60s): no children exist yet, but a run
+  // is "launching". Flag it so spawnChildren aborts, and finalize the launching lanes now.
+  if (!benchProcs.length) {
+    const launching = Object.values(runs).filter(r => r && r.status === 'launching')
+    if (!launching.length) return { ok: false, code: 409, error: 'No run is in progress.' }
+    stoppedByUser = true
+    for (const r of launching) { r.status = 'stopped'; r.ended_reason = 'stopped_by_user'; broadcast({ type: 'run_exit', lane: r.lane, reason: 'stopped' }) }
+    return { ok: true }
+  }
   stoppedByUser = true
   const snapshot = benchProcs.slice()
   for (const { proc } of snapshot) { try { proc.kill() } catch (_) {} }
