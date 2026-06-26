@@ -213,8 +213,23 @@ async function main() {
   const trace = await run({ task, model, verbose: args.verbose === true, onEvent: emit })
   const card = score(trace, task)
 
+  const fmt = (v) => (v == null ? 'n/a' : Number(v).toFixed(2))
+  const cap = card.capabilities || {}
+  const d = card.diagnostics || {}
   console.log('\n📊 ── Scorecard ──')
-  for (const [k, v] of Object.entries(card)) console.log(`   ${k}: ${v}`)
+  console.log(`   task: ${card.task_id}   model: ${card.model}`)
+  console.log(`   outcome: ${card.success ? 'success' : 'fail'}   progress: ${fmt(card.progress)} (${card.milestones.reached}/${card.milestones.total} milestones)`)
+  console.log(`   overall score: ${fmt(card.score)}`)
+  console.log('\n   Capability profile (general agentic skills; Minecraft is just the instrument):')
+  console.log(`     completion   ${fmt(cap.completion)}   (how far down the dependency chain)`)
+  console.log(`     planning     ${fmt(cap.planning)}   (prerequisites before dependents)`)
+  console.log(`     tool_use     ${fmt(cap.tool_use)}   (valid actions / preconditions)`)
+  console.log(`     adaptation   ${fmt(cap.adaptation)}   (recover after self-caused failure)`)
+  console.log(`     robustness   ${fmt(cap.robustness)}   (recover after external disturbance)`)
+  console.log(`     efficiency   ${fmt(cap.efficiency)}   (productive-action ratio)`)
+  console.log('\n   Diagnostics (not scored): ' +
+    `steps=${d.actions} loops=${d.unproductive_loops} agent_errors=${d.agent_errors} ` +
+    `env_errors=${d.env_errors} disturbances=${d.disturbance_events} · time=${card.duration_s}s (informational)`)
 
   const file = saveResult(card, trace)
   console.log(`\nSaved result -> ${path.relative(__dirname, file)}`)

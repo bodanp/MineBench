@@ -273,9 +273,17 @@ const TOOL_IMPLS = {
   async move_to(bot, { x, y, z }) {
     try {
       await navigate(bot, new goals.GoalNear(x, y, z, 1), { x, y, z })
-      return `Reached ${formatPos(bot.entity.position)}`
+      return verticalGapReport(bot, { x, y, z }) || `Reached ${formatPos(bot.entity.position)}`
     } catch (e) {
-      return `Failed to reach (${x},${y},${z}): ${e.message}`
+      const gap = verticalGapReport(bot, { x, y, z })
+      if (gap) return gap
+      // Factual reason only — no advice. Map pathfinder's error to what actually happened.
+      let reason
+      if (e.name === 'NoPath') reason = 'no path to the goal exists'
+      else if (e.name === 'Timeout') reason = 'pathfinding timed out before a route was found'
+      else if (e.message === 'stuck') reason = 'movement stopped making progress toward the goal'
+      else reason = e.message
+      return `Failed to reach (${x},${y},${z}) from ${formatPos(bot.entity.position)}: ${reason}.`
     }
   },
 
@@ -827,6 +835,21 @@ function formatPos(p) {
   return `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`
 }
 
+// After a move_to attempt, detect the case where the bot is standing essentially underneath
+// the target but still below it in Y — i.e. the only thing left between it and the goal is
+// height it can't walk up to (pathfinder no longer builds towers). Returns a FACTUAL state
+// report (no tool names, no suggested actions) so the model decides how to gain the height.
+// Returns null when there's no such vertical-only gap (then the caller's normal message wins).
+function verticalGapReport(bot, target) {
+  const p = bot.entity.position
+  const dy = Math.floor(target.y) - Math.floor(p.y)
+  const xzDist = Math.hypot(target.x - p.x, target.z - p.z)
+  if (dy >= 1 && xzDist <= 2.5) {
+    return `At ${formatPos(p)}. Target (${target.x}, ${target.y}, ${target.z}) is ${dy} block(s) higher and there is no walkable or diggable route up to it from here.`
+  }
+  return null
+}
+
 // Ensure the bot is holding a tool that will actually drop `block`. Blocks like stone and
 // ores expose `harvestTools` (the set of items that yield a drop); breaking them with the
 // wrong tool or a bare hand destroys the block for nothing.
@@ -956,6 +979,11 @@ function getMovements(bot) {
     const mcData = require('minecraft-data')(bot.version)
     bot._mbMovements = new Movements(bot, mcData)
     bot._mbMovements.diagonalCost = 1.8
+    // Don't let pathfinder build 1x1 towers to gain height: its apex-placement timing is
+    // unreliable (the bot bounces ~10 times before a block lands). move_to instead reports
+    // the remaining vertical gap and leaves the climb to the model (which can pillar up via
+    // place_block, choosing a block it can spare).
+    bot._mbMovements.allow1by1towers = false
   }
   return bot._mbMovements
 }
@@ -1011,21 +1039,48 @@ async function walkForwardHopping(bot, ms) {
   return +start.distanceTo(bot.entity.position).toFixed(1)
 }
 
-// Run pathfinder.goto with only a hard overall time cap so it can't hang forever.
-// UNSTUCK ASSISTANCE DISABLED — the stall detection (aborting with "stuck" when the bot
-// stopped making progress, which triggered stuck-recovery) has been commented out.
-function gotoWithStallGuard(bot, goal, { stallMs = 2000, maxMs = 12000 } = {}) {
+// Run pathfinder.goto guarded by a PROGRESS watchdog (no fixed total-time budget).
+//
+// The bot is only declared "stuck" when it makes NO progress toward the goal for `stallMs`.
+// "Progress" means the bot got CLOSER to the target than ever before this trip, OR pathfinder
+// is actively mining a block in its path (`isMining`), OR placing scaffolding (`isBuilding`)
+// — all of which can keep the bot briefly stationary while still legitimately working toward
+// the goal. Because a far target the bot is steadily walking/mining toward keeps hitting new
+// closest distances, the watchdog NEVER trips while real progress is happening — however long
+// the trip takes. There is intentionally no absolute time cap: defining progress as "getting
+// closer" (not "any movement") is what lets us drop it — a bot that merely jitters or paces in
+// place without getting closer is still caught by `stallMs`.
+//
+// pathfinder.goto resolves on goal_reached and rejects on its own for the genuinely-unexpected
+// cases (NoPath = unreachable goal, Timeout = couldn't compute a path, GoalChanged, PathStop);
+// those pass straight through and surface immediately/accurately.
+function gotoWithStallGuard(bot, goal, target, { stallMs = 8000 } = {}) {
   return new Promise((resolve, reject) => {
-    // let last = bot.entity.position.clone()
-    // let lastProgress = Date.now()
-    const started = Date.now()
+    const targetVec = target && Number.isFinite(Number(target.x))
+      ? new Vec3(Number(target.x), Number(target.y), Number(target.z))
+      : null
+    let bestDist = targetVec ? bot.entity.position.distanceTo(targetVec) : Infinity
+    let lastPos = bot.entity.position.clone()
+    let lastProgress = Date.now()
     let settled = false
     const finish = (fn) => { if (settled) return; settled = true; clearInterval(timer); fn() }
     const timer = setInterval(() => {
-      // const now = bot.entity.position
-      // if (last.distanceTo(now) > 0.15) { last = now.clone(); lastProgress = Date.now() }
-      // Stall-based stuck detection removed; only the hard maxMs cap remains.
-      if (/* Date.now() - lastProgress > stallMs || */ Date.now() - started > maxMs) {
+      let progressed = false
+      if (targetVec) {
+        // Primary signal: a new closest approach to the goal.
+        const d = bot.entity.position.distanceTo(targetVec)
+        if (d < bestDist - 0.5) { bestDist = d; progressed = true }
+      } else {
+        // No target coords available: fall back to raw movement as the progress signal.
+        const now = bot.entity.position
+        if (lastPos.distanceTo(now) > 0.5) { lastPos = now.clone(); progressed = true }
+      }
+      let mining = false
+      let building = false
+      try { mining = bot.pathfinder.isMining() } catch (_) {}
+      try { building = bot.pathfinder.isBuilding() } catch (_) {}
+      if (progressed || mining || building) lastProgress = Date.now()
+      if (Date.now() - lastProgress > stallMs) {
         try { bot.pathfinder.stop() } catch (_) {}
         finish(() => reject(new Error('stuck')))
       }
@@ -1037,12 +1092,15 @@ function gotoWithStallGuard(bot, goal, { stallMs = 2000, maxMs = 12000 } = {}) {
   })
 }
 
-// Navigate to a goal. UNSTUCK ASSISTANCE DISABLED — the automatic stuck-recovery (on a
+// Navigate to a goal. A single attempt, guarded by the progress watchdog above: it runs as
+// long as the bot keeps getting closer (or is mining/placing toward the goal) and only fails
+// with "stuck" after `stallMs` of no progress — or immediately if pathfinder reports the goal
+// is unreachable (NoPath). UNSTUCK ASSISTANCE DISABLED — the automatic stuck-recovery (on a
 // stall: facing the target, digging through the obstacle, then hopping forward, retried
-// up to 4 times) has been commented out. Navigation now makes a single attempt.
+// up to 4 times) has been commented out.
 async function navigate(bot, goal, target) {
   bot.pathfinder.setMovements(getMovements(bot))
-  await gotoWithStallGuard(bot, goal)
+  await gotoWithStallGuard(bot, goal, target)
   return true
   // let lastErr
   // for (let attempt = 0; attempt < 4; attempt++) {

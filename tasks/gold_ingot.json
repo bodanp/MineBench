@@ -1,10 +1,10 @@
 {
-  "id": "iron_pickaxe",
-  "title": "Make an iron pickaxe from scratch",
-  "goal": "Make an iron_pickaxe from scratch.",
-  "difficulty": 5,
-  "max_steps": 120,
-  "rationale": "Very long-horizon: gather wood, craft planks/sticks/table, wooden then stone pickaxe, mine iron ore, build a furnace, smelt iron ingots, and craft an iron pickaxe. Tests deep tool-tier reasoning, smelting, and multi-stage crafting dependencies.",
+  "id": "gold_ingot",
+  "title": "Make a gold ingot from scratch",
+  "goal": "Make a gold_ingot from scratch.",
+  "difficulty": 6,
+  "max_steps": 160,
+  "rationale": "Longest-horizon test: gather wood, craft planks/sticks/table, wooden then stone then iron pickaxe (gold ore only drops with an iron-or-better pickaxe), build a furnace, mine deep to find gold ore, then smelt raw gold into a gold ingot. Tests the full tool-tier dependency chain, deep mining/navigation, and smelting.",
   "setup": {
     "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
     "time": "day",
@@ -12,7 +12,7 @@
     "give": [],
     "clear_inventory": true
   },
-  "success": { "inventory": { "iron_pickaxe": 1 } },
+  "success": { "inventory": { "gold_ingot": 1 } },
   "milestones": [
     { "id": "log", "suffix": "_log", "label": "Gather wood" },
     { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
@@ -24,6 +24,8 @@
     { "id": "furnace", "item": "furnace", "label": "Make furnace", "deps": ["cobblestone", "crafting_table"] },
     { "id": "raw_iron", "any": ["raw_iron", "iron_ore"], "label": "Mine iron ore", "deps": ["stone_pickaxe"] },
     { "id": "iron_ingot", "item": "iron_ingot", "label": "Smelt iron", "deps": ["raw_iron", "furnace"] },
-    { "id": "iron_pickaxe", "item": "iron_pickaxe", "label": "Craft iron pickaxe", "deps": ["stick", "iron_ingot", "crafting_table"] }
+    { "id": "iron_pickaxe", "item": "iron_pickaxe", "label": "Craft iron pickaxe", "deps": ["stick", "iron_ingot", "crafting_table"] },
+    { "id": "raw_gold", "any": ["raw_gold", "gold_ore", "deepslate_gold_ore"], "label": "Mine gold ore", "deps": ["iron_pickaxe"] },
+    { "id": "gold_ingot", "item": "gold_ingot", "label": "Smelt gold", "deps": ["raw_gold", "furnace"] }
   ]
 }
