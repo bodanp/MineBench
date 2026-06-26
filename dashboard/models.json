@@ -4,9 +4,9 @@
   "models": [
     "gpt-4o",
     "gpt-4o-mini",
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4.1-nano",
+    { "label": "GPT-4.1 (copilot)", "value": "copilot/gpt-4.1" },
+    { "label": "GPT-4.1 mini (copilot)", "value": "copilot/gpt-4.1-mini" },
+    { "label": "GPT-4.1 nano (copilot)", "value": "copilot/gpt-4.1-nano" },
     { "label": "GPT-5.5 (copilot)", "value": "copilot/gpt-5.5" },
     { "label": "GPT-5.4 (copilot)", "value": "copilot/gpt-5.4" },
     { "label": "GPT-5.4 mini (copilot)", "value": "copilot/gpt-5.4-mini" },
