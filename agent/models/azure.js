@@ -12,8 +12,10 @@ const { DefaultAzureCredential, getBearerTokenProvider } = require('@azure/ident
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
-// Retry transient API failures (429 rate limits, 5xx, dropped connections) with exponential
-// backoff + jitter so one hiccup doesn't kill a whole benchmark run. Honors Retry-After.
+// Retry transient API failures (429 rate limits, 5xx, dropped connections) with a fixed
+// exponential backoff (1s, 2s, 4s, 8s, 16s, ...) so one hiccup doesn't kill a whole
+// benchmark run. We intentionally ignore the Retry-After header since some responses
+// report wildly inflated wait times.
 async function callWithRetry(fn, { retries = 6, baseMs = 1000, maxMs = 60000 } = {}) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -26,13 +28,7 @@ async function callWithRetry(fn, { retries = 6, baseMs = 1000, maxMs = 60000 } =
         ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN'].includes(code)
       if (!transient || attempt >= retries) throw e
 
-      const headers = e?.headers || e?.response?.headers || {}
-      const hget = (k) => (typeof headers.get === 'function' ? headers.get(k) : headers[k])
-      const afterMs = Number(hget('retry-after-ms'))
-      const afterS = Number(hget('retry-after'))
-      const wait = afterMs > 0 ? afterMs
-        : afterS > 0 ? afterS * 1000
-        : Math.min(maxMs, baseMs * 2 ** attempt) * (0.5 + Math.random())
+      const wait = Math.min(maxMs, baseMs * 2 ** attempt)
       console.warn(`Azure API ${status || code || 'error'} — retrying in ${(wait / 1000).toFixed(1)}s (attempt ${attempt + 1}/${retries})`)
       await sleep(wait)
     }
