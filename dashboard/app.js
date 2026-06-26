@@ -266,19 +266,23 @@
   function renderRuns() {
     const table = $('#runs');
     table.innerHTML = '';
-    const cols = historyApiReady ? RUN_COLS.concat({ key: 'actions', label: 'Actions' }) : RUN_COLS;
+    const cols = historyApiReady ? RUN_COLS.concat({ key: 'actions', label: 'Actions', sortable: false }) : RUN_COLS;
     const headRow = h('tr');
     for (const col of cols) {
+      const sortable = col.sortable !== false;
       const isSorted = sortState.key === col.key;
       const arrow = isSorted ? h('span', { class: 'arrow', text: sortState.dir < 0 ? ' ▼' : ' ▲' }) : null;
-      headRow.appendChild(h('th', {
-        class: 'sortable' + (col.num ? ' num' : ''),
-        onclick: () => {
+      const attrs = {
+        class: (sortable ? 'sortable' : '') + (col.num ? ' num' : '')
+      };
+      if (sortable) {
+        attrs.onclick = () => {
           if (sortState.key === col.key) sortState.dir *= -1;
           else sortState = { key: col.key, dir: col.num ? -1 : 1 };
           renderRuns();
-        }
-      }, col.label, arrow));
+        };
+      }
+      headRow.appendChild(h('th', attrs, col.label, sortable ? arrow : null));
     }
     table.appendChild(h('thead', null, headRow));
 
