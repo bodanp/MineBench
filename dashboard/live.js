@@ -42,15 +42,30 @@
   const section = $('#live-section');
   const lanesEl = $('#live-lanes');
   const compareEl = $('#live-compare');
+  const verboseEl = $('#live-verbose');
   let historyStale = false;
   let prepMsg = '';   // latest server-prep log line (cold boot is slow — narrate it)
 
   // ---- live state mirror -----------------------------------------------------
   // Up to two lanes. `mode` decides one panel vs two; `interactive` toggles the goal box.
-  let state = { mode: 'single', interactive: false, runs: { A: null, B: null } };
+  let state = { mode: 'single', interactive: false, verbose: false, runs: { A: null, B: null } };
   const laneKeys = () => (state.mode === 'h2h' ? ['A', 'B'] : ['A']);
   const activeRuns = () => laneKeys().map(k => state.runs[k]).filter(Boolean);
   const anyStatus = (...s) => activeRuns().some(r => s.includes(r.status));
+
+  function loadVerbosePref() {
+    if (!verboseEl) return;
+    let saved = null;
+    try { saved = localStorage.getItem('minebench.live.verbose'); } catch (_) {}
+    state.verbose = saved === '1';
+  }
+
+  function setVerbose(v) {
+    state.verbose = !!v;
+    try { localStorage.setItem('minebench.live.verbose', state.verbose ? '1' : '0'); } catch (_) {}
+    if (verboseEl) verboseEl.checked = state.verbose;
+    render();
+  }
 
   function laneStatusText(run) {
     if (!run) return 'waiting…';
@@ -86,17 +101,19 @@
     const action = s.action
       ? h('span', null, h('span', { class: 'tool', text: s.action.tool }), h('span', { class: 'args', text: `(${fmtArgs(s.action.args)})` }))
       : h('span', { class: 'args', text: '— (stop)' });
-    return h('div', { class: 'step-row' + (s.ok ? '' : ' err') },
+    const row = h('div', { class: 'step-row' + (s.ok ? '' : ' err') },
       h('div', { class: 'bubble-line' },
         h('span', { class: 'step-i', text: `#${s.i}` }),
         h('div', { class: 'thought-bubble', text: s.thought || '(no thought)' })
-      ),
-      h('div', { class: 'step-action' },
+      ));
+    if (state.verbose) {
+      row.appendChild(h('div', { class: 'step-action' },
         action,
         h('span', { class: 'badge ' + (s.ok ? 'ok' : 'err'), text: s.ok ? '✓' : '✗' }),
         (s.result ? h('div', { class: 'step-result', text: s.result }) : null)
-      )
-    );
+      ));
+    }
+    return row;
   }
 
   function renderLane(run, laneKey) {
@@ -130,12 +147,16 @@
     } else {
       const last = steps[steps.length - 1];
       current = last
-        ? h('span', null,
-            h('span', { class: 'cur-i', text: `#${last.i} ` }),
-            last.thought ? h('span', { class: 'cur-thought', text: last.thought + '  ' }) : null,
-            last.action
-              ? h('span', null, h('span', { class: 'tool', text: last.action.tool }), h('span', { class: 'args', text: `(${fmtArgs(last.action.args)})` }))
-              : h('span', { class: 'args', text: '— (stop)' }))
+        ? (state.verbose
+          ? h('span', null,
+              h('span', { class: 'cur-i', text: `#${last.i} ` }),
+              last.thought ? h('span', { class: 'cur-thought', text: last.thought + '  ' }) : null,
+              last.action
+                ? h('span', null, h('span', { class: 'tool', text: last.action.tool }), h('span', { class: 'args', text: `(${fmtArgs(last.action.args)})` }))
+                : h('span', { class: 'args', text: '— (stop)' }))
+          : h('span', null,
+              h('span', { class: 'cur-i', text: `#${last.i} ` }),
+              h('span', { class: 'cur-thought', text: last.thought || '(no thought)' })))
         : h('span', { class: 'muted', text: '—' });
     }
     lane.appendChild(h('div', { class: 'lane-current' }, current));
@@ -253,6 +274,7 @@
   function render() {
     section.classList.remove('hidden');
     syncControls();
+    section.classList.toggle('compact', !state.verbose);
 
     const st = overallStatus();
     const statusEl = $('#live-status');
@@ -479,6 +501,8 @@
   }
 
   // Show the panel immediately (waiting state) so it's obvious the live view is active.
+  loadVerbosePref();
+  if (verboseEl) verboseEl.addEventListener('change', () => setVerbose(verboseEl.checked));
   render();
   initControls();
   connect();
