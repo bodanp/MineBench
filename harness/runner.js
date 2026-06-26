@@ -100,18 +100,26 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     }
   })
 
-  // If THIS bot dies, end the task IMMEDIATELY — don't play on. Mineflayer auto-respawns the bot
-  // on death, so without this a killed bot would silently come back and keep acting. Checking
-  // `botDied` only between steps isn't enough: a long in-flight action (attack_entity / move_to
-  // can run up to ~30s) would let the respawned bot keep fighting before the loop notices. So we
-  // also disconnect right here in the handler, which aborts any in-flight action and prevents the
-  // respawn from ever taking another step.
+  // If THIS bot dies, end the task — don't let the auto-respawned bot play on. But disconnecting
+  // is subtle: mineflayer's health plugin emits 'death' and then, right AFTER this handler
+  // returns, auto-sends the respawn packet (bot.respawn()). If we bot.quit() synchronously here
+  // we tear the connection down BEFORE that handshake completes, so the server saves the player
+  // at Health=0 — and the NEXT run loads that dead player data and spawns already-dying. So:
+  // latch botDied (stops the run loop issuing new actions), cancel any in-flight movement/combat,
+  // wait for the respawn to actually land (a full-health 'spawn'), and only THEN disconnect.
   let botDied = false
   bot.on('death', () => {
     if (botDied) return
     botDied = true
-    log('Bot died — disconnecting immediately.')
-    try { bot.quit() } catch (_) {}
+    log('Bot died — letting it respawn, then disconnecting.')
+    try { bot.pathfinder && bot.pathfinder.setGoal(null) } catch (_) {}
+    try { bot.clearControlStates() } catch (_) {}
+    let quit = false
+    const doQuit = () => { if (quit) return; quit = true; try { bot.quit() } catch (_) {} }
+    // Respawn landed (server has restored + will save full health) -> brief grace, then quit.
+    bot.once('spawn', () => setTimeout(doQuit, 250))
+    // Safety net: disconnect anyway if the respawn 'spawn' never arrives.
+    setTimeout(doQuit, 3000)
   })
 
   // Surface the common anti-cheat movement kick with the fix.
