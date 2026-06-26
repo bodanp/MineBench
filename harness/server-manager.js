@@ -15,7 +15,7 @@
 // prepareForRun hides all of the above: provisioning, adopt-or-boot, reset, and op management.
 // Two instances share one fixed seed, so each bot gets an identical but independent world.
 // ─────────────────────────────────────────────
-const { spawn } = require('child_process')
+const { spawn, spawnSync } = require('child_process')
 const net = require('net')
 const fs = require('fs')
 const path = require('path')
@@ -190,17 +190,63 @@ async function stopAll(opts = {}) {
   await Promise.all([...procs.keys()].map((p) => stopServer(p, opts)))
 }
 
-function deleteWorlds(dir) {
+async function deleteWorlds(dir, { log = console.log } = {}) {
   for (const w of ['world', 'world_nether', 'world_the_end']) {
-    fs.rmSync(path.join(dir, w), { recursive: true, force: true })
+    const p = path.join(dir, w)
+    for (let attempt = 1; attempt <= 6; attempt++) {
+      try { fs.rmSync(p, { recursive: true, force: true }); break }
+      catch (e) {
+        // On Windows the world dir can stay locked for a moment after the server exits —
+        // retry a few times before giving up so a reset reliably wipes it.
+        if (attempt === 6) { log(`⚠️ Could not delete ${w} (${e.code || e.message}); world may not regenerate.`); break }
+        await sleep(500)
+      }
+    }
   }
 }
 
+// Force-stop whatever is LISTENING on `port` — used to tear down a Minecraft server we ADOPTED
+// (port open but not started by us, e.g. an externally-run or orphaned server) so a reset can
+// actually wipe its world. We can't send `stop` to a console we don't own, so we kill the PID
+// bound to the port. Best-effort + cross-platform; only the listener is targeted (bot clients
+// make outbound connections, so they're never matched).
+function killProcessOnPort(port, { log = console.log } = {}) {
+  try {
+    if (process.platform === 'win32') {
+      const psCmd = [
+        "$ErrorActionPreference='SilentlyContinue';",
+        `$ids = Get-NetTCPConnection -LocalPort ${port} -State Listen | Select-Object -ExpandProperty OwningProcess -Unique;`,
+        `if (-not $ids) { $ids = netstat -ano | Select-String ':${port}\\s+.*LISTENING' | ForEach-Object { ($_ -split '\\s+')[-1] } | Select-Object -Unique }`,
+        "foreach ($id in $ids) { if ($id -and $id -ne '0') { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue } }"
+      ].join(' ')
+      spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', psCmd], { stdio: 'ignore' })
+    } else {
+      const out = spawnSync('sh', ['-c', `lsof -ti tcp:${port} || true`], { encoding: 'utf8' })
+      for (const pid of String(out.stdout || '').split(/\s+/).filter(Boolean)) {
+        try { process.kill(parseInt(pid, 10), 'SIGKILL') } catch (_) {}
+      }
+    }
+    log(`Force-stopped the server holding port ${port}.`)
+  } catch (e) { log(`Could not force-stop port ${port}: ${e.message}`) }
+}
+
 // Stop the given servers (to release file locks) and delete their world dirs so the next
-// boot regenerates identical terrain from the fixed seed.
+// boot regenerates from the fixed seed. A server we started stops gracefully via its console;
+// one we only adopted (external/orphaned) is force-stopped by port so the reset still works.
 async function resetWorlds(keys, { log = console.log } = {}) {
-  for (const key of keys) await stopServer(SERVERS[key].port, { log })
-  for (const key of keys) { deleteWorlds(SERVERS[key].dir); log(`🧹 Reset worlds for server ${key}.`) }
+  for (const key of keys) {
+    const { port } = SERVERS[key]
+    await stopServer(port, { log })                       // graceful if WE started it
+    if (await isPortOpen(port)) {                          // still up => adopted/external/orphaned
+      log(`Server ${key} on ${port} wasn't started by us — force-stopping it to reset the world.`)
+      killProcessOnPort(port, { log })
+      const deadline = Date.now() + 20000
+      while (Date.now() < deadline && await isPortOpen(port)) await sleep(500)
+      if (await isPortOpen(port)) log(`⚠️ Port ${port} still open; world delete may fail (locked).`)
+      else await sleep(1000)                              // settle so Windows releases file handles
+    }
+  }
+  for (const key of keys) { await deleteWorlds(SERVERS[key].dir, { log }); log(`🧹 Reset worlds for server ${key}.`) }
 }
 
 async function resetAndRestart(keys, opts = {}) {

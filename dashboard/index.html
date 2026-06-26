@@ -17,15 +17,45 @@
   <main class="wrap" id="app">
     <section id="run-controls" class="run-controls hidden">
       <div class="rc-row">
-        <label class="rc-field">Task
+        <label class="rc-field">Goal source
+          <select id="rc-source">
+            <option value="task">Task</option>
+            <option value="interactive">Interactive</option>
+          </select>
+        </label>
+        <label class="rc-field" id="rc-task-field">Task
           <select id="rc-task"></select>
         </label>
-        <label class="rc-field">Model
-          <input id="rc-model" list="rc-model-list" autocomplete="off" placeholder="default" />
-          <datalist id="rc-model-list"></datalist>
+        <label class="rc-field">Mode
+          <select id="rc-mode">
+            <option value="single">Single</option>
+            <option value="h2h">Head-to-head</option>
+          </select>
         </label>
+        <label class="rc-field" id="rc-model-field">Model
+          <select id="rc-model"></select>
+        </label>
+        <label class="rc-field hidden" id="rc-model-a-field">Model A
+          <select id="rc-model-a"></select>
+        </label>
+        <label class="rc-field hidden" id="rc-model-b-field">Model B
+          <select id="rc-model-b"></select>
+        </label>
+        <label class="rc-field hidden" id="rc-world-field">World
+          <select id="rc-world">
+            <option value="different">Different</option>
+            <option value="same">Same</option>
+          </select>
+        </label>
+        <label class="rc-check"><input type="checkbox" id="rc-reset" /> Wipe world &amp; regenerate</label>
         <button id="rc-start" class="btn-start" type="button">▶ Start run</button>
         <button id="rc-stop" class="btn-stop" type="button" disabled>■ Stop</button>
+      </div>
+      <div class="rc-row hidden" id="rc-goal-row">
+        <label class="rc-field rc-grow">Goal / chat
+          <input id="rc-goal" autocomplete="off" placeholder="Sent to the idling bot(s) as a chat — e.g. obtain a gold ingot" />
+        </label>
+        <button id="rc-send" class="btn-start" type="button" disabled>➤ Send goal</button>
       </div>
       <div id="rc-msg" class="rc-msg"></div>
     </section>
@@ -36,20 +66,8 @@
         <span class="live-label">LIVE</span>
         <span id="live-status" class="live-status"></span>
       </div>
-      <div id="live-title" class="live-title"></div>
-      <div class="live-progress"><div id="live-bar" class="live-bar"></div></div>
-      <div id="live-current" class="live-current"></div>
-      <div class="live-cols">
-        <div class="live-steps-wrap">
-          <h3>Steps <span id="live-stepcount" class="muted"></span></h3>
-          <div class="table-wrap"><table id="live-steps" class="steps"></table></div>
-        </div>
-        <div class="live-side">
-          <h3>Inventory</h3>
-          <div id="live-inventory" class="inv-chips"></div>
-          <div id="live-scorecard" class="live-scorecard"></div>
-        </div>
-      </div>
+      <div id="live-lanes" class="live-lanes"></div>
+      <div id="live-compare" class="live-compare"></div>
     </section>
 
     <section id="empty" class="empty hidden">

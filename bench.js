@@ -62,6 +62,23 @@ function adHocTask(goal) {
   }
 }
 
+// Interactive standby task: the bot joins, applies a sane minimal setup, and idles "awaiting"
+// until a human delivers a goal via chat (see harness/runner waitForGoalViaChat). The goal is
+// ad-hoc, so there is no automatic success spec — the outcome is human-judged.
+function interactiveTask() {
+  return {
+    id: 'interactive',
+    title: 'Interactive session',
+    goal: '',
+    max_steps: parseInt(process.env.MAX_STEPS || '60'),
+    setup: {
+      gamerules: { doDaylightCycle: false, doWeatherCycle: false, doMobSpawning: false, keepInventory: true },
+      time: 'day', weather: 'clear', clear_inventory: false
+    },
+    success: {}
+  }
+}
+
 // Rebuild the CLI args a child single-bot run needs (same task/goal, one model).
 // Children always run with --no-server: the parent (dual orchestrator) already ensured the
 // servers, so each child just connects to the port injected via MC_SERVER_PORT.
@@ -169,8 +186,11 @@ async function runDual(args, task, goal, modelA, modelB) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  const interactive = args.interactive === true
   const goal = args.goal && args.goal !== true ? args.goal : args._[0]
-  const task = goal ? adHocTask(goal) : loadTask(args.task && args.task !== true ? args.task : 'gather_wood')
+  const task = interactive
+    ? interactiveTask()
+    : (goal ? adHocTask(goal) : loadTask(args.task && args.task !== true ? args.task : 'gather_wood'))
 
   // Dual mode: --model-a X --model-b Y runs two bots (one per model) in their own windows.
   const modelA = args['model-a'] && args['model-a'] !== true ? args['model-a'] : null
@@ -186,7 +206,11 @@ async function main() {
     process.exit(1)
   }
 
-  console.log(`\n▶ Running task "${task.id}" with model "${model.name}" (max ${task.max_steps} steps)\n`)
+  if (interactive) {
+    console.log(`\n▶ Interactive standby with model "${model.name}" — bot will idle until a chat goal arrives (max ${task.max_steps} steps)\n`)
+  } else {
+    console.log(`\n▶ Running task "${task.id}" with model "${model.name}" (max ${task.max_steps} steps)\n`)
+  }
 
   // Auto-launch server A (adopts it if already running, boots/provisions it if not), unless
   // --no-server. Servers are left warm after the run. Use --reset to wipe + regenerate the world.
@@ -204,7 +228,7 @@ async function main() {
   // Live dashboard sink: streams run_start/step/run_end to dashboard/live-server.js if it's
   // running (no-op otherwise). Start it with `npm run dashboard:live` to watch live.
   const emit = createLiveEmitter()
-  const trace = await run({ task, model, verbose: args.verbose === true, onEvent: emit })
+  const trace = await run({ task, model, verbose: args.verbose === true, onEvent: emit, interactive })
   const card = score(trace, task)
 
   const fmt = (v) => (v == null ? 'n/a' : Number(v).toFixed(2))

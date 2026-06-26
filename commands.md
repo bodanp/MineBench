@@ -30,6 +30,18 @@ npm run bench -- --task stone_pickaxe --model-a X --model-b Y --world same     #
 npm run bench -- --task stone_pickaxe --model-a X --model-b Y --reset          # fresh worlds
 ```
 
+## Interactive (standby, then chat)
+The bot joins and idles **"awaiting goal/instruction"** — no agent loop yet. The goal arrives
+later as a **chat message**, which starts the bot (no goal-first launch). Easiest via the
+dashboard (pick **Goal source → Interactive**, Run, then type a goal and **Send**), or from the
+CLI. Interactive goals are ad-hoc, so the outcome is **human-judged** (no automatic score).
+```bash
+npm run bench -- --interactive --model copilot/gpt-4.1     # then type a goal in-game chat
+```
+Works in **single** and **H2H same-world** (one chat message starts both bots). For H2H different
+worlds the same goal is broadcast to each isolated world. From the dashboard, the goal box relays
+via the server console (`say [GOAL] <text>`); in-game chat also works.
+
 ## Manage servers (optional — for keeping them warm or resetting)
 The dashboard/CLI already auto-manage servers; use these only to hold them warm or reset manually.
 ```bash
