@@ -29,6 +29,11 @@
 // Public API:
 //   checkSuccess(state, task) -> boolean      (state = { inventory: {item: count} })
 //   score(trace, task)        -> scorecard
+//
+// Success DSL (v1): task.success = { "inventory": { "<item>": <minCount>, ... },
+//                                    "killed_player": "<username>" | ["<username>", ...] }
+// Multiple keys are AND-ed. Extend here (placed/reach/etc.) as new task types appear — keep it
+// declarative so the Tasks owner (Role 5) never has to write engine code.
 // ─────────────────────────────────────────────
 
 const { getMilestones, reachedCount, matchesItem } = require('./milestones')
@@ -36,14 +41,26 @@ const { getMilestones, reachedCount, matchesItem } = require('./milestones')
 function checkSuccess(state, task) {
   const spec = task && task.success
   if (!spec || typeof spec !== 'object') return false
-  const inv = (state && state.inventory) || {}
+  // No criteria (e.g. an ad-hoc goal) can never auto-succeed — there is nothing to verify.
+  if (Object.keys(spec).length === 0) return false
+
   if (spec.inventory) {
+    const inv = (state && state.inventory) || {}
     for (const [item, min] of Object.entries(spec.inventory)) {
       if ((inv[item] || 0) < min) return false
     }
-    return true
   }
-  return false
+
+  // killed_player: one or more usernames the bot must have killed. The harness records real
+  // deaths (from the server's entityDead packet) into state.killed_players — we never trust
+  // the model's own claim that it killed someone.
+  if (spec.killed_player) {
+    const need = Array.isArray(spec.killed_player) ? spec.killed_player : [spec.killed_player]
+    const killed = (state && state.killed_players) || []
+    if (!need.every(n => killed.includes(n))) return false
+  }
+
+  return true
 }
 
 const clamp01 = (n) => Math.max(0, Math.min(1, n))

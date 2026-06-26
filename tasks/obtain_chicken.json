@@ -1,0 +1,18 @@
+{
+  "id": "obtain_chicken",
+  "title": "Obtain raw chicken",
+  "goal": "Obtain at least 1 chicken (raw chicken) by killing a chicken.",
+  "difficulty": 1,
+  "max_steps": 40,
+  "rationale": "PvP smoke test on a small, fast mob: track a chicken with the dynamic-follow combat loop, kill it, and collect the raw chicken drop. Also yields feathers.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true,
+    "summon": [{ "entity": "chicken", "count": 3, "offset": [2, 0, 2] }]
+  },
+  "success": { "inventory": { "chicken": 1 } }
+}

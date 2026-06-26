@@ -64,6 +64,16 @@ Run in the server console (or as an op'd player) to grant night vision that neve
 /effect give @s night_vision infinite 0 true
 ```
 
+## Duel: two bots kill each other (asymmetric dual mode)
+Give each bot its OWN task with `--task-a` / `--task-b`. Bot A is `MineBenchBotA`, bot B is
+`MineBenchBotB`, so point each task at the OTHER bot. Both are given a stone_sword and spawn a
+short distance apart (via each task's `spawn_offset`), so they must close the gap and fight a
+real duel. (Requires PvP enabled on the server and both bots `/op`'d.)
+```bash
+node bench.js --task-a kill_bot_b --task-b kill_bot_a --model-a copilot/gpt-5.4 --model-b copilot/gpt-4o
+```
+Each bot's scorecard reports success when the server confirms its target died.
+
 ## Other
 ```bash
 npm run smoke                # connect + walk 30s sanity check (node bot/bot.js)
