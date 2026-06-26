@@ -1,0 +1,21 @@
+{
+  "id": "obtain_beef",
+  "title": "Obtain raw beef",
+  "goal": "Obtain at least 1 beef by killing a cow.",
+  "difficulty": 1,
+  "max_steps": 40,
+  "rationale": "PvP smoke test: locate a cow with look_around and use attack_entity to kill it, then collect the beef drop. Tests entity tracking + combat + drop collection.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true,
+    "summon": [{ "entity": "cow", "count": 2, "offset": [2, 0, 2] }]
+  },
+  "success": { "inventory": { "beef": 1 } },
+  "milestones": [
+    { "id": "beef", "item": "beef", "count": 1, "label": "Kill a cow for beef" }
+  ]
+}

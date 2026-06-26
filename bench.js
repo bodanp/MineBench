@@ -126,22 +126,42 @@ function expectedModelName(cli) {
   return cli && cli.startsWith('copilot/') ? cli.slice('copilot/'.length) : cli
 }
 
-// Wait until two new result files for this task (written at/after `sinceMs`) exist, then return
-// the scorecards for modelA and modelB. Pairs by model name when possible, else falls back to the
-// two newest files. Times out so a crashed child can't hang us forever.
-async function waitForResults({ taskId, sinceMs, modelA, modelB, maxWaitMs }) {
-  const nameA = expectedModelName(modelA), nameB = expectedModelName(modelB)
+// Read a result file's scorecard, or null if it can't be parsed yet (still being written).
+function readCard(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')).scorecard } catch { return null }
+}
+
+// Wait until both sides of a dual run have written a result, then return [cardA, cardB].
+// `sides` = [{ taskId, model }, { taskId, model }] — one per bot. Two cases:
+//   • different task ids (e.g. a duel: kill_bot_b vs kill_bot_a) -> each side's file is uniquely
+//     identified by its task-id prefix, so just take the newest file per task id.
+//   • same task id (e.g. both run gather_wood) -> pair by model name, falling back to the two
+//     newest files when the names can't be told apart.
+// Times out so a crashed child can't hang us forever.
+async function waitForResults({ sinceMs, sides, maxWaitMs }) {
   const deadline = Date.now() + maxWaitMs
+  const sameTask = sides[0].taskId === sides[1].taskId
   while (Date.now() < deadline) {
-    const files = resultFilesForTask(taskId, sinceMs)   // newest first
-    if (files.length >= 2) {
-      const cards = files.map(f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')).scorecard } catch { return null } }).filter(Boolean)
-      let cardA = cards.find(c => c.model === nameA)
-      let cardB = nameA === nameB
-        ? cards.filter(c => c.model === nameB)[1]   // both bots share a model -> second file
-        : cards.find(c => c.model === nameB)
-      if (!cardA || !cardB) { cardA = cards[1]; cardB = cards[0] }   // name match failed -> two newest
-      if (cardA && cardB) return [cardA, cardB]
+    if (sameTask) {
+      const files = resultFilesForTask(sides[0].taskId, sinceMs)   // newest first
+      if (files.length >= 2) {
+        const cards = files.map(readCard).filter(Boolean)
+        const nameA = expectedModelName(sides[0].model), nameB = expectedModelName(sides[1].model)
+        let cardA = cards.find(c => c.model === nameA)
+        let cardB = nameA === nameB
+          ? cards.filter(c => c.model === nameB)[1]   // both bots share a model -> second file
+          : cards.find(c => c.model === nameB)
+        if (!cardA || !cardB) { cardA = cards[1]; cardB = cards[0] }   // name match failed -> two newest
+        if (cardA && cardB) return [cardA, cardB]
+      }
+    } else {
+      // Asymmetric: one file per task id. Newest matching each side is unambiguous.
+      const filesA = resultFilesForTask(sides[0].taskId, sinceMs)
+      const filesB = resultFilesForTask(sides[1].taskId, sinceMs)
+      if (filesA.length && filesB.length) {
+        const cardA = readCard(filesA[0]), cardB = readCard(filesB[0])
+        if (cardA && cardB) return [cardA, cardB]
+      }
     }
     await sleep(2000)
   }
@@ -175,7 +195,11 @@ async function runDual(args, task, goal, modelA, modelB) {
   console.log('\nOpened two bot windows. Waiting for both to finish...')
   console.log('(Each window stays open so you can read its logs; close them when done.)')
 
-  const cards = await waitForResults({ taskId: task.id, sinceMs, modelA, modelB, maxWaitMs })
+  const cards = await waitForResults({
+    sinceMs,
+    sides: [{ taskId: taskA.id, model: modelA }, { taskId: taskB.id, model: modelB }],
+    maxWaitMs
+  })
   if (!cards) {
     console.error('\nTimed out waiting for both runs to finish. Check the two bot windows for errors.')
     process.exit(1)
@@ -195,7 +219,16 @@ async function main() {
   // Dual mode: --model-a X --model-b Y runs two bots (one per model) in their own windows.
   const modelA = args['model-a'] && args['model-a'] !== true ? args['model-a'] : null
   const modelB = args['model-b'] && args['model-b'] !== true ? args['model-b'] : null
-  if (modelA && modelB) return runDual(args, task, goal, modelA, modelB)
+  if (modelA && modelB) {
+    // Optional per-bot tasks: --task-a / --task-b let the two bots run DIFFERENT tasks, e.g. a
+    // duel where bot A is told to kill bot B and bot B is told to kill bot A simultaneously.
+    // When omitted, both bots run the shared `task` (the symmetric same-task comparison).
+    const taskAId = args['task-a'] && args['task-a'] !== true ? args['task-a'] : null
+    const taskBId = args['task-b'] && args['task-b'] !== true ? args['task-b'] : null
+    const taskA = taskAId ? loadTask(taskAId) : task
+    const taskB = taskBId ? loadTask(taskBId) : task
+    return runDual(args, { taskA, taskB }, goal, modelA, modelB)
+  }
 
   let model
   try {

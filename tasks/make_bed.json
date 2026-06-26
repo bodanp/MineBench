@@ -1,0 +1,25 @@
+{
+  "id": "make_bed",
+  "title": "Make a bed",
+  "goal": "Craft a white_bed.",
+  "difficulty": 3,
+  "max_steps": 90,
+  "rationale": "Showcases PvP enabling crafting goals: a bed needs 3 wool, and wool comes from killing sheep. The agent must reason that wool comes from sheep, kill enough sheep with attack_entity to collect 3 white_wool, gather wood and craft planks, then craft the bed. Tests combining combat, gathering, and multi-stage crafting.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "day",
+    "weather": "clear",
+    "teleport": "spawn",
+    "give": [],
+    "clear_inventory": true,
+    "summon": [{ "entity": "sheep", "count": 5, "offset": [2, 0, 2] }]
+  },
+  "success": { "inventory": { "white_bed": 1 } },
+  "milestones": [
+    { "id": "log", "suffix": "_log", "label": "Gather wood" },
+    { "id": "planks", "suffix": "_planks", "label": "Craft planks", "deps": ["log"] },
+    { "id": "crafting_table", "item": "crafting_table", "label": "Crafting-table access", "tool": true, "deps": ["planks"] },
+    { "id": "wool", "item": "white_wool", "count": 3, "label": "Collect 3 wool from sheep" },
+    { "id": "white_bed", "item": "white_bed", "label": "Craft white bed", "deps": ["planks", "wool", "crafting_table"] }
+  ]
+}

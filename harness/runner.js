@@ -128,6 +128,30 @@ async function run({ task, model, log = console.log, verbose = false, onEvent, i
 
   const bot = createBot()
 
+  // Harness-owned kill tracking: record the username of any PLAYER that actually dies (the
+  // server's entityDead packet), so a "killed_player" task can be scored from real world state
+  // rather than the model's claim. A Set de-dupes repeated death packets.
+  const killedPlayers = new Set()
+  bot.on('entityDead', (e) => {
+    if (e && e.type === 'player' && e.username && e.username !== bot.username) {
+      killedPlayers.add(e.username)
+    }
+  })
+
+  // If THIS bot dies, end the task IMMEDIATELY — don't play on. Mineflayer auto-respawns the bot
+  // on death, so without this a killed bot would silently come back and keep acting. Checking
+  // `botDied` only between steps isn't enough: a long in-flight action (attack_entity / move_to
+  // can run up to ~30s) would let the respawned bot keep fighting before the loop notices. So we
+  // also disconnect right here in the handler, which aborts any in-flight action and prevents the
+  // respawn from ever taking another step.
+  let botDied = false
+  bot.on('death', () => {
+    if (botDied) return
+    botDied = true
+    log('Bot died — disconnecting immediately.')
+    try { bot.quit() } catch (_) {}
+  })
+
   // Surface the common anti-cheat movement kick with the fix.
   bot.on('kicked', (reason) => {
     const text = typeof reason === 'string' ? reason : JSON.stringify(reason)
@@ -176,6 +200,7 @@ async function run({ task, model, log = console.log, verbose = false, onEvent, i
     let endReason = 'max_steps'
 
     for (let step = 0; step < maxSteps; step++) {
+      if (botDied) { endReason = 'died'; break }
       if (!bot.entity) { endReason = 'disconnected'; break }
 
       const obs = buildObservation(bot)
@@ -221,16 +246,23 @@ async function run({ task, model, log = console.log, verbose = false, onEvent, i
       emit({ type: 'step', i: step + 1, max_steps: maxSteps, thought: decision.thought, action: { tool: decision.tool, args: decision.args }, result, ok, pos, inventory: readInventory(bot) })
 
       // Harness-owned success detection (don't trust the model's stop()).
-      if (checkSuccess({ inventory: readInventory(bot) }, task)) { endReason = 'success'; break }
+      if (checkSuccess({ inventory: readInventory(bot), killed_players: [...killedPlayers] }, task)) { endReason = 'success'; break }
+      if (botDied) { endReason = 'died'; break }
       if (done) { endReason = 'agent_stop'; break }
     }
 
     trace.ended_reason = endReason
-    trace.final_state = { inventory: readInventory(bot) }
+    trace.final_state = { inventory: readInventory(bot), killed_players: [...killedPlayers] }
     emit({ type: 'run_end', ended_reason: endReason, duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
   } catch (e) {
-    log('Run error:', e.message)
-    trace.ended_reason = trace.ended_reason || 'error'
+    // A death that aborts an in-flight action (we call bot.quit() the instant the bot dies) can
+    // surface here as a thrown error — attribute it to the death, not a generic 'error'.
+    if (botDied) {
+      trace.ended_reason = 'died'
+    } else {
+      log('Run error:', e.message)
+      trace.ended_reason = trace.ended_reason || 'error'
+    }
   } finally {
     trace.duration_s = +((Date.now() - startedMs) / 1000).toFixed(1)
     try { bot.quit() } catch (_) {}
