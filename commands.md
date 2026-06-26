@@ -30,6 +30,18 @@ npm run bench -- --task stone_pickaxe --model-a X --model-b Y --world same     #
 npm run bench -- --task stone_pickaxe --model-a X --model-b Y --reset          # fresh worlds
 ```
 
+## Interactive (standby, then chat)
+The bot joins and idles **"awaiting goal/instruction"** — no agent loop yet. The goal arrives
+later as a **chat message**, which starts the bot (no goal-first launch). Easiest via the
+dashboard (pick **Goal source → Interactive**, Run, then type a goal and **Send**), or from the
+CLI. Interactive goals are ad-hoc, so the outcome is **human-judged** (no automatic score).
+```bash
+npm run bench -- --interactive --model copilot/gpt-4.1     # then type a goal in-game chat
+```
+Works in **single** and **H2H same-world** (one chat message starts both bots). For H2H different
+worlds the same goal is broadcast to each isolated world. From the dashboard, the goal box relays
+via the server console (`say [GOAL] <text>`); in-game chat also works.
+
 ## Manage servers (optional — for keeping them warm or resetting)
 The dashboard/CLI already auto-manage servers; use these only to hold them warm or reset manually.
 ```bash
@@ -38,6 +50,12 @@ npm run servers:up:both      # hold A + B warm (for head-to-head)
 npm run servers:reset        # wipe + regenerate world A from the seed, then hold
 npm run servers:reset:both   # wipe + regenerate A and B
 npm run servers:down         # stop servers this launcher started
+```
+
+## Give players infinite night vision
+Run in the server console (or as an op'd player) to grant night vision that never expires.
+```bash
+/effect give @s night_vision infinite 0 true
 ```
 
 ## Flags reference
@@ -57,12 +75,6 @@ npm run servers:down         # stop servers this launcher started
 - Server config via env (optional): `MINEBENCH_SEED`, `MINEBENCH_JAVA_ARGS`,
   `MINEBENCH_SERVER_A_DIR`/`_B_DIR`, `MINEBENCH_SERVER_A_PORT`/`_B_PORT`.
 - Server B auto-provisions (clones from A) the first time head-to-head "different worlds" runs.
-
-## Give players infinite night vision
-Run in the server console (or as an op'd player) to grant night vision that never expires.
-```bash
-/effect give @s night_vision infinite 0 true
-```
 
 ## Duel: two bots kill each other (asymmetric dual mode)
 Give each bot its OWN task with `--task-a` / `--task-b`. Bot A is `MineBenchBotA`, bot B is

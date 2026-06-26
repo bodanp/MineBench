@@ -64,7 +64,53 @@ function waitForSpawn(bot, timeoutMs = 30000) {
   })
 }
 
-async function run({ task, model, log = console.log, verbose = false, onEvent }) {
+// INTERACTIVE STANDBY — resolve to the first human goal the idling bot is given. Two channels,
+// one handler each:
+//   • in-game chat   — a player types a goal; we read it from the 'chat' event.
+//   • dashboard relay — live-server runs `say [GOAL] <text>` on the server console, which the
+//                       bot receives as a system message; we pull the text after the sentinel.
+// We ignore the bot's own name and any MineBenchBot* (so same-world H2H bots don't trigger each
+// other off their "Awaiting…" announcement). Resolves null on timeout/disconnect so the caller
+// can end cleanly instead of hanging forever.
+function waitForGoalViaChat(bot, { log = () => {}, botName = '', timeoutMs = parseInt(process.env.MINEBENCH_AWAIT_MS || '600000', 10) } = {}) {
+  return new Promise((resolve) => {
+    let done = false
+    const finish = (goal) => { if (done) return; done = true; cleanup(); resolve(goal) }
+    const ignore = (name) => {
+      if (!name) return true
+      const n = String(name).toLowerCase()
+      return n === String(botName).toLowerCase() || /^minebenchbot/i.test(n)
+    }
+    const onChat = (username, message) => {
+      if (ignore(username)) return
+      const g = String(message || '').trim()
+      if (g) { log(`Goal received from ${username}: ${g}`); finish(g) }
+    }
+    const onMessageStr = (message) => {
+      const str = String(message || '')
+      const idx = str.indexOf('[GOAL] ')
+      if (idx >= 0) {
+        const g = str.slice(idx + '[GOAL] '.length).trim()
+        if (g) { log(`Goal received via dashboard: ${g}`); finish(g) }
+      }
+    }
+    const onEnd = () => finish(null)
+    const cleanup = () => {
+      clearTimeout(timer)
+      bot.removeListener('chat', onChat)
+      bot.removeListener('messagestr', onMessageStr)
+      bot.removeListener('end', onEnd)
+      bot.removeListener('kicked', onEnd)
+    }
+    const timer = setTimeout(() => { log('No goal received before timeout — ending standby.'); finish(null) }, timeoutMs)
+    bot.on('chat', onChat)
+    bot.on('messagestr', onMessageStr)
+    bot.once('end', onEnd)
+    bot.once('kicked', onEnd)
+  })
+}
+
+async function run({ task, model, log = console.log, verbose = false, onEvent, interactive = false }) {
   const startedMs = Date.now()
   // Optional live event sink (used by the live dashboard). No-op when not provided, so the
   // runner never depends on the dashboard being present.
@@ -130,11 +176,32 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
     await applyTaskSetup(bot, task, log)
     await sleep(500)
 
-    const agent = createAgent({ model, goal: task.goal, toolSchemas: TOOL_SCHEMAS })
+    const maxSteps = task.max_steps || 60
+    let goal = task.goal
+
+    // INTERACTIVE: stand by in the world ("awaiting") with NO agent loop until a human delivers
+    // a goal via chat (in-game) or the dashboard relay. Only then do we build the agent and run.
+    if (interactive) {
+      emit({ type: 'run_awaiting', task_id: task.id, title: task.title || task.id, model: model.name, max_steps: maxSteps, started_at: trace.started_at, inventory: readInventory(bot) })
+      log('Awaiting goal/instruction… (type a goal in chat, or send one from the dashboard)')
+      try { bot.chat('Awaiting goal/instruction…') } catch (_) {}
+      goal = await waitForGoalViaChat(bot, { log, botName: bot.username })
+      if (!goal) {
+        trace.ended_reason = 'no_goal'
+        trace.final_state = { inventory: readInventory(bot) }
+        emit({ type: 'run_end', ended_reason: 'no_goal', duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
+        trace.duration_s = +((Date.now() - startedMs) / 1000).toFixed(1)
+        try { bot.quit() } catch (_) {}
+        return trace
+      }
+      task.goal = goal
+      try { bot.chat(`Goal received: ${goal}`) } catch (_) {}
+    }
+
+    const agent = createAgent({ model, goal, toolSchemas: TOOL_SCHEMAS })
     agent.start()
 
-    const maxSteps = task.max_steps || 60
-    emit({ type: 'run_start', task_id: task.id, title: task.title || task.id, model: model.name, goal: task.goal, max_steps: maxSteps, started_at: trace.started_at })
+    emit({ type: 'run_start', task_id: task.id, title: task.title || task.id, model: model.name, goal, max_steps: maxSteps, started_at: trace.started_at })
     // UNSTUCK ASSISTANCE DISABLED — position history / cooldown for oscillation detection.
     // const posHistory = []
     // let stuckCooldown = 0

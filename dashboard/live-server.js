@@ -14,19 +14,26 @@
 //   POST /ingest      -> receive a run event from bench.js, update state, broadcast to clients
 //   GET  /state       -> JSON snapshot of the current run (debug / late join)
 //
-// State machine for a run's status: running --(run_end)--> ended --(run_scored)--> done.
-// run_end never downgrades a run that already reached 'done' (events can race on localhost).
+// State machine for a lane's status:
+//   launching --(run_awaiting)--> awaiting --(run_start)--> running --(run_end)--> ended --(run_scored)--> done
+// Interactive runs pass through 'awaiting' (bot idling for a chat goal); task runs skip it.
+// A run carries up to two lanes (A | B) for head-to-head; single runs use lane A only.
 // ─────────────────────────────────────────────
+// Load .env BEFORE requiring server-manager: it reads MINEBENCH_SERVER_A_DIR/port/etc. at module
+// load, and live-server now drives the server lifecycle in-process (not just via child benches).
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
 const { spawn } = require('child_process')
+const sm = require('../harness/server-manager')
 
 const PORT = parseInt(process.env.MINEBENCH_LIVE_PORT || '8099', 10)
 const DASH_DIR = __dirname
 const REPO_ROOT = path.join(__dirname, '..')
 const TASKS_DIR = path.join(REPO_ROOT, 'tasks')
 const BENCH_JS = path.join(REPO_ROOT, 'bench.js')
+const MODELS_JSON = path.join(DASH_DIR, 'models.json')
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -37,14 +44,21 @@ const CONTENT_TYPES = {
   '.ico': 'image/x-icon'
 }
 
-let currentRun = null
+// ---- live run state -------------------------------------------------------
+// Up to two side-by-side lanes. `mode` tells the browser whether to show one panel or two.
+let mode = 'single'              // 'single' | 'h2h'
+let interactive = false          // standby-then-chat run?
+const runs = { A: null, B: null } // per-lane run state, keyed by lane
 const clients = new Set()
 
-// The benchmark child process launched from the page (one at a time — a single bot can only
-// hold one Minecraft connection). benchProc is null when nothing is running.
-let benchProc = null
+// The benchmark child process(es) launched from the page. One for single, two for H2H. Each is
+// { lane, proc }. Empty when nothing is running.
+let benchProcs = []
+// Prepared bot targets for the current run — [{ lane, port, username }]. Used by /prompt to relay
+// an interactive goal to the right server(s) via the console `say` command.
+let runTargets = []
 let stoppedByUser = false
-let launchOutput = []   // tail of the child's stdout/stderr, for surfacing launch failures
+let launchOutput = []   // tail of children's stdout/stderr + prep logs, for surfacing failures
 
 function sse(res, event) {
   try { res.write(`data: ${JSON.stringify(event)}\n\n`) } catch (_) {}
@@ -53,17 +67,18 @@ function broadcast(event) {
   for (const res of clients) sse(res, event)
 }
 
-function startRun(e) {
-  currentRun = {
-    status: 'running',
+function startRun(e, lane) {
+  runs[lane] = {
+    lane,
+    status: e.type === 'run_awaiting' ? 'awaiting' : 'running',
     task_id: e.task_id || 'unknown',
     title: e.title || e.task_id || 'unknown',
-    model: e.model || 'model',
+    model: e.model || (runs[lane] && runs[lane].model) || 'model',
     goal: e.goal || '',
-    max_steps: e.max_steps || null,
+    max_steps: e.max_steps || (runs[lane] && runs[lane].max_steps) || null,
     started_at: e.started_at || new Date().toISOString(),
     steps: [],
-    latest_inventory: null,
+    latest_inventory: e.inventory || (runs[lane] && runs[lane].latest_inventory) || null,
     ended_reason: null,
     duration_s: null,
     final_inventory: null,
@@ -116,85 +131,212 @@ function modelSuggestions() {
   return [...set]
 }
 
-function defaultModel() {
-  return process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o'
+// The dashboard's model dropdown is driven by dashboard/models.json — a curated list the team
+// edits. Each entry is either a plain string or { label, value }; we normalize to { label, value }
+// (label = what the user sees, value = the actual --model arg). Read fresh each call so edits to
+// the file show up without restarting the server. `default` is the preselected value.
+function loadModelsConfig() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(MODELS_JSON, 'utf8'))
+    const options = []
+    const seen = new Set()
+    for (const m of (raw.models || [])) {
+      const value = normalizeModelName(typeof m === 'string' ? m : (m && m.value))
+      if (!value || seen.has(value)) continue
+      seen.add(value)
+      const label = (m && typeof m === 'object' && m.label) ? String(m.label) : value
+      options.push({ label, value })
+    }
+    let def = normalizeModelName(raw.default)
+    if (def && !seen.has(def)) { options.unshift({ label: def, value: def }); seen.add(def) }
+    if (!def) def = options[0] ? options[0].value : ''
+    return { default: def, options }
+  } catch (_) {
+    return { default: '', options: [] }
+  }
 }
 
-const isBusy = () => !!benchProc || !!(currentRun && (currentRun.status === 'launching' || currentRun.status === 'running'))
+function defaultModel() {
+  return loadModelsConfig().default || process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o'
+}
 
-function launchRun(task, model) {
+const isBusy = () => benchProcs.length > 0 ||
+  Object.values(runs).some(r => r && (r.status === 'launching' || r.status === 'awaiting' || r.status === 'running'))
+
+const cleanModel = (m) => (m && String(m).trim().slice(0, 200)) || ''
+
+// Surface server-prep progress (cold boot is ~50-60s) to the page so it shows "starting server…"
+// instead of looking hung.
+function prepLog(msg) {
+  const s = String(msg)
+  launchOutput.push(s)
+  if (launchOutput.length > 80) launchOutput = launchOutput.slice(-80)
+  broadcast({ type: 'prep_log', message: s })
+}
+
+// Generalized launch. config = { task, mode, model, modelA, modelB, world, reset, interactive }.
+// live-server owns the whole server lifecycle so warm-reuse and reset stay consistent across runs
+// (its `procs` map persists, unlike a short-lived child). Every mode preps via prepareForRun, then
+// spawns pure `--no-server` children that just connect:
+//   single (task|interactive) -> prepareForRun({mode:'single', reset}) -> one child
+//   h2h    (task|interactive) -> prepareForRun({mode:'h2h', world, reset}) -> two children, one per lane
+function launchRun(cfg) {
   if (isBusy()) return { ok: false, code: 409, error: 'A run is already in progress. Stop it first.' }
-  if (!knownTaskIds().has(task)) return { ok: false, code: 400, error: `Unknown task "${task}".` }
 
-  const args = [BENCH_JS, '--task', task]
-  const cleanModel = (model && String(model).trim().slice(0, 200)) || ''
-  if (cleanModel) args.push('--model', cleanModel)
+  const isH2H = cfg.mode === 'h2h'
+  const isInteractive = cfg.interactive === true
+  const reset = cfg.reset === true
+  const world = cfg.world === 'same' ? 'same' : 'different'
+  const task = String(cfg.task || '')
 
-  // Placeholder so the UI flips to "busy" immediately, before the bot finishes connecting.
+  if (!isInteractive && !knownTaskIds().has(task)) return { ok: false, code: 400, error: `Unknown task "${task}".` }
+
+  mode = isH2H ? 'h2h' : 'single'
+  interactive = isInteractive
   stoppedByUser = false
   launchOutput = []
-  currentRun = {
-    status: 'launching', task_id: task, title: task, model: cleanModel || defaultModel(),
-    goal: '', max_steps: null, started_at: new Date().toISOString(),
-    steps: [], latest_inventory: null, ended_reason: null, duration_s: null, final_inventory: null, scorecard: null
-  }
-  broadcast({ type: 'run_launching', task_id: task, model: currentRun.model })
+  benchProcs = []
+  runTargets = []
+  runs.A = null
+  runs.B = null
 
-  try {
-    // No shell: args are passed as an array, so the model/task strings can't inject commands.
-    benchProc = spawn(process.execPath, args, {
-      cwd: REPO_ROOT,
-      windowsHide: true,
-      env: { ...process.env, MINEBENCH_LIVE_PORT: String(PORT), MINEBENCH_LIVE: '1' }
-    })
-  } catch (e) {
-    benchProc = null
-    currentRun.status = 'error'
-    broadcast({ type: 'launch_error', message: e.message })
-    return { ok: false, code: 500, error: e.message }
-  }
+  const lanes = isH2H ? ['A', 'B'] : ['A']
 
-  const capture = (buf) => {
-    const text = buf.toString()
-    launchOutput.push(text)
-    if (launchOutput.length > 40) launchOutput = launchOutput.slice(-40)
-  }
-  if (benchProc.stdout) benchProc.stdout.on('data', capture)
-  if (benchProc.stderr) benchProc.stderr.on('data', capture)
-
-  benchProc.on('error', (e) => {
-    benchProc = null
-    if (currentRun) currentRun.status = 'error'
-    broadcast({ type: 'launch_error', message: `Failed to start bench: ${e.message}` })
-  })
-
-  benchProc.on('exit', (code) => {
-    benchProc = null
-    if (stoppedByUser) {
-      if (currentRun) { currentRun.status = 'stopped'; currentRun.ended_reason = currentRun.ended_reason || 'stopped_by_user' }
-      broadcast({ type: 'run_exit', reason: 'stopped' })
-    } else if (currentRun && currentRun.status === 'done') {
-      // Normal completion — run_scored already finalized it. Nothing to do.
-    } else if (code && code !== 0) {
-      if (currentRun) currentRun.status = 'error'
-      const tail = launchOutput.join('').split('\n').filter(Boolean).slice(-8).join('\n')
-      broadcast({ type: 'launch_error', message: `Bench exited with code ${code}.`, detail: tail })
-    } else {
-      if (currentRun && currentRun.status !== 'done') currentRun.status = currentRun.status === 'launching' ? 'error' : 'ended'
-      broadcast({ type: 'run_exit', reason: 'exited' })
+  // Placeholder launching state per lane so the UI flips to "busy" immediately.
+  for (const lane of lanes) {
+    const model = isH2H ? (lane === 'A' ? cfg.modelA : cfg.modelB) : cfg.model
+    runs[lane] = {
+      lane, status: 'launching',
+      task_id: isInteractive ? 'interactive' : task,
+      title: isInteractive ? 'Interactive session' : task,
+      model: normalizeModelName(model) || defaultModel(),
+      goal: '', max_steps: null, started_at: new Date().toISOString(),
+      steps: [], latest_inventory: null, ended_reason: null, duration_s: null, final_inventory: null, scorecard: null
     }
-  })
+  }
+  broadcast({ type: 'run_config', mode, interactive, lanes })
+  for (const lane of lanes) broadcast({ type: 'run_launching', lane, task_id: runs[lane].task_id, model: runs[lane].model })
+
+  // Prep servers (may take ~a minute on cold boot) off the request path, then spawn children.
+  // The UI already shows "launching"; prep_log events narrate progress. live-server does ALL
+  // server prep (including reset) so children are pure `--no-server` clients.
+  ;(async () => {
+    try {
+      const targets = isH2H
+        ? await sm.prepareForRun({ mode: 'h2h', world, reset }, { log: prepLog })
+        : await sm.prepareForRun({ mode: 'single', reset }, { log: prepLog })
+      runTargets = targets.map((t, i) => ({ lane: lanes[i], port: t.port, username: t.username }))
+      spawnChildren({ cfg, lanes, targets, isH2H, isInteractive })
+    } catch (e) {
+      for (const lane of lanes) if (runs[lane]) runs[lane].status = 'error'
+      broadcast({ type: 'launch_error', message: `Server preparation failed: ${e.message}` })
+    }
+  })()
 
   return { ok: true }
 }
 
+function spawnChildren({ cfg, lanes, targets, isH2H, isInteractive }) {
+  // If the user clicked Stop while servers were still being prepared (cold boot can take ~a
+  // minute), the run was cancelled before any child existed — don't spawn the bots now.
+  if (stoppedByUser) {
+    for (const lane of lanes) if (runs[lane] && runs[lane].status === 'launching') { runs[lane].status = 'stopped'; runs[lane].ended_reason = 'stopped_by_user' }
+    broadcast({ type: 'run_exit', reason: 'stopped' })
+    return
+  }
+  const baseEnv = { ...process.env, MINEBENCH_LIVE_PORT: String(PORT), MINEBENCH_LIVE: '1' }
+  for (let i = 0; i < lanes.length; i++) {
+    const lane = lanes[i]
+    const t = targets[i]
+    const model = isH2H ? (lane === 'A' ? cfg.modelA : cfg.modelB) : cfg.model
+
+    const args = [BENCH_JS]
+    if (isInteractive) args.push('--interactive')
+    else args.push('--task', String(cfg.task))
+    const m = cleanModel(model)
+    if (m) args.push('--model', m)
+    args.push('--no-server')   // live-server already prepared (and reset) the server(s)
+
+    const env = { ...baseEnv, MINEBENCH_LANE: lane, MC_SERVER_PORT: String(t.port), MC_BOT_USERNAME: t.username }
+
+    let proc
+    try {
+      // No shell: args are passed as an array, so model/task strings can't inject commands.
+      proc = spawn(process.execPath, args, { cwd: REPO_ROOT, windowsHide: true, env })
+    } catch (e) {
+      if (runs[lane]) runs[lane].status = 'error'
+      broadcast({ type: 'launch_error', lane, message: `Failed to start lane ${lane}: ${e.message}` })
+      continue
+    }
+    benchProcs.push({ lane, proc })
+    wireChild(lane, proc)
+  }
+}
+
+function wireChild(lane, proc) {
+  const capture = (buf) => {
+    launchOutput.push(`[${lane}] ${buf.toString()}`)
+    if (launchOutput.length > 80) launchOutput = launchOutput.slice(-80)
+  }
+  if (proc.stdout) proc.stdout.on('data', capture)
+  if (proc.stderr) proc.stderr.on('data', capture)
+
+  proc.on('error', (e) => {
+    benchProcs = benchProcs.filter(b => b.proc !== proc)
+    if (runs[lane]) runs[lane].status = 'error'
+    broadcast({ type: 'launch_error', lane, message: `Lane ${lane}: failed to start bench: ${e.message}` })
+  })
+
+  proc.on('exit', (code) => {
+    benchProcs = benchProcs.filter(b => b.proc !== proc)
+    const run = runs[lane]
+    if (stoppedByUser) {
+      if (run) { run.status = 'stopped'; run.ended_reason = run.ended_reason || 'stopped_by_user' }
+      broadcast({ type: 'run_exit', lane, reason: 'stopped' })
+    } else if (run && run.status === 'done') {
+      // Normal completion — run_scored already finalized it.
+    } else if (code && code !== 0) {
+      if (run) run.status = 'error'
+      const tail = launchOutput.join('').split('\n').filter(Boolean).slice(-8).join('\n')
+      broadcast({ type: 'launch_error', lane, message: `Lane ${lane} exited with code ${code}.`, detail: tail })
+    } else {
+      if (run && run.status !== 'done') run.status = run.status === 'launching' ? 'error' : 'ended'
+      broadcast({ type: 'run_exit', lane, reason: 'exited' })
+    }
+  })
+}
+
+// Relay an interactive goal to the idling bot(s). live-server runs `say [GOAL] <text>` on each
+// distinct prepared server console; the standby bots receive it as a chat message and start.
+// (Only works for servers WE started — an externally-pre-started server can't take console
+// commands, so in that case the human types the goal in-game instead.)
+function deliverPrompt(goal) {
+  const g = String(goal || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 500)
+  if (!g) return { ok: false, code: 400, error: 'Empty goal.' }
+  if (!interactive) return { ok: false, code: 409, error: 'The current run is not interactive.' }
+  const ports = [...new Set(runTargets.map(t => t.port))]
+  if (!ports.length) return { ok: false, code: 409, error: 'No interactive server is ready yet.' }
+  let delivered = 0
+  for (const p of ports) if (sm.sendCommand(p, `say [GOAL] ${g}`)) delivered++
+  if (!delivered) return { ok: false, code: 409, error: 'Could not reach the server console (it may be externally managed). Type the goal in the in-game chat instead.' }
+  return { ok: true, ports: delivered }
+}
+
 function stopRun() {
-  if (!benchProc) return { ok: false, code: 409, error: 'No run is in progress.' }
+  // Stop during the async server-prep phase (cold boot ~50-60s): no children exist yet, but a run
+  // is "launching". Flag it so spawnChildren aborts, and finalize the launching lanes now.
+  if (!benchProcs.length) {
+    const launching = Object.values(runs).filter(r => r && r.status === 'launching')
+    if (!launching.length) return { ok: false, code: 409, error: 'No run is in progress.' }
+    stoppedByUser = true
+    for (const r of launching) { r.status = 'stopped'; r.ended_reason = 'stopped_by_user'; broadcast({ type: 'run_exit', lane: r.lane, reason: 'stopped' }) }
+    return { ok: true }
+  }
   stoppedByUser = true
-  try { benchProc.kill() } catch (_) {}
-  // Safety net: force-terminate if it ignores the first signal.
-  const proc = benchProc
-  setTimeout(() => { try { if (proc && !proc.killed) proc.kill('SIGKILL') } catch (_) {} }, 2500)
+  const snapshot = benchProcs.slice()
+  for (const { proc } of snapshot) { try { proc.kill() } catch (_) {} }
+  // Safety net: force-terminate any that ignore the first signal. Servers are left warm.
+  setTimeout(() => { for (const { proc } of snapshot) { try { if (proc && !proc.killed) proc.kill('SIGKILL') } catch (_) {} } }, 2500)
   return { ok: true }
 }
 
@@ -206,29 +348,34 @@ function readJsonBody(req, cb) {
 
 function handleEvent(e) {
   if (!e || typeof e !== 'object') return
+  const lane = e.lane || 'A'
   switch (e.type) {
+    case 'run_awaiting':
+      startRun(e, lane)   // status -> 'awaiting' (bot idling for a chat goal)
+      break
     case 'run_start':
-      startRun(e)
+      startRun(e, lane)   // status -> 'running'
       break
     case 'step':
-      if (!currentRun) startRun({})
+      if (!runs[lane]) startRun({}, lane)
       // De-dupe by step index in case a client races snapshot + broadcast.
-      if (!currentRun.steps.some(s => s.i === e.i)) currentRun.steps.push(e)
-      if (e.inventory) currentRun.latest_inventory = e.inventory
+      if (!runs[lane].steps.some(s => s.i === e.i)) runs[lane].steps.push(e)
+      if (e.inventory) runs[lane].latest_inventory = e.inventory
       break
     case 'run_end':
-      if (currentRun) {
-        if (currentRun.status === 'running') currentRun.status = 'ended'
-        currentRun.ended_reason = e.ended_reason
-        currentRun.error = e.error || null
-        currentRun.duration_s = e.duration_s
-        currentRun.final_inventory = e.final_inventory
+      if (runs[lane]) {
+        // run_end finalizes a running OR still-awaiting (no-goal) lane; never downgrades 'done'.
+        if (runs[lane].status === 'running' || runs[lane].status === 'awaiting') runs[lane].status = 'ended'
+        runs[lane].ended_reason = e.ended_reason
+        runs[lane].error = e.error || null
+        runs[lane].duration_s = e.duration_s
+        runs[lane].final_inventory = e.final_inventory
       }
       break
     case 'run_scored':
-      if (currentRun) {
-        currentRun.status = 'done'
-        currentRun.scorecard = e.scorecard
+      if (runs[lane]) {
+        runs[lane].status = 'done'
+        runs[lane].scorecard = e.scorecard
       }
       if (regenerateHistory()) broadcast({ type: 'history_updated' })
       break
@@ -262,7 +409,7 @@ const server = http.createServer((req, res) => {
     })
     res.write('retry: 2000\n\n')
     clients.add(res)
-    sse(res, { type: 'snapshot', run: currentRun })
+    sse(res, { type: 'snapshot', mode, interactive, runs })
     const ping = setInterval(() => { try { res.write(': ping\n\n') } catch (_) {} }, 25000)
     req.on('close', () => { clearInterval(ping); clients.delete(res) })
     return
@@ -277,14 +424,16 @@ const server = http.createServer((req, res) => {
 
   if (url === '/state') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
-    return res.end(JSON.stringify(currentRun))
+    return res.end(JSON.stringify({ mode, interactive, runs }))
   }
 
   if (url === '/tasks') {
+    const mc = loadModelsConfig()
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
     return res.end(JSON.stringify({
       tasks: listTasks(),
-      default_model: defaultModel(),
+      default_model: mc.default || defaultModel(),
+      model_options: mc.options,
       models: modelSuggestions(),
       busy: isBusy()
     }))
@@ -292,10 +441,28 @@ const server = http.createServer((req, res) => {
 
   if (url === '/run' && req.method === 'POST') {
     return readJsonBody(req, (body) => {
-      if (!body || !body.task) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ error: 'Missing "task".' })) }
-      const r = launchRun(String(body.task), body.model)
+      if (!body) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ error: 'Invalid request body.' })) }
+      if (body.interactive !== true && !body.task) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ error: 'Missing "task".' })) }
+      const r = launchRun({
+        task: body.task,
+        mode: body.mode === 'h2h' ? 'h2h' : 'single',
+        model: body.model,
+        modelA: body.modelA,
+        modelB: body.modelB,
+        world: body.world === 'same' ? 'same' : 'different',
+        reset: body.reset === true,
+        interactive: body.interactive === true
+      })
       res.writeHead(r.ok ? 200 : (r.code || 400), { 'content-type': 'application/json' })
       res.end(JSON.stringify(r.ok ? { ok: true } : { error: r.error }))
+    })
+  }
+
+  if (url === '/prompt' && req.method === 'POST') {
+    return readJsonBody(req, (body) => {
+      const r = deliverPrompt(body && body.goal)
+      res.writeHead(r.ok ? 200 : (r.code || 400), { 'content-type': 'application/json' })
+      res.end(JSON.stringify(r.ok ? { ok: true, ports: r.ports } : { error: r.error }))
     })
   }
 
@@ -326,5 +493,19 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`  Pick a task and click Start in the page — or run a benchmark in another terminal.\n`)
   if (process.env.MINEBENCH_NO_OPEN !== '1' && !process.argv.includes('--no-open')) openBrowser(url)
 })
+
+// Stop any benchmark children AND the warm Minecraft server(s) we started when the dashboard
+// itself shuts down (Ctrl+C). Runs are otherwise left warm for fast reuse — only a full
+// dashboard exit tears the servers down.
+let shuttingDown = false
+async function shutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
+  for (const { proc } of benchProcs) { try { proc.kill() } catch (_) {} }
+  try { await sm.stopAll() } catch (_) {}
+  process.exit(0)
+}
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
 
 module.exports = { server, handleEvent }
