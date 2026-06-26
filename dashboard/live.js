@@ -55,9 +55,9 @@
 
   function loadVerbosePref() {
     if (!verboseEl) return;
-    const saved = localStorage.getItem('minebench.live.verbose');
-    state.verbose = saved == null ? false : saved === '1';
-    verboseEl.checked = state.verbose;
+    let saved = null;
+    try { saved = localStorage.getItem('minebench.live.verbose'); } catch (_) {}
+    state.verbose = saved === '1';
   }
 
   function setVerbose(v) {
