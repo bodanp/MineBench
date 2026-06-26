@@ -86,9 +86,17 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
   // server's entityDead packet), so a "killed_player" task can be scored from real world state
   // rather than the model's claim. A Set de-dupes repeated death packets.
   const killedPlayers = new Set()
+  // Mob kills, counted per type (e.g. { zombie: 3 }). With doMobSpawning off and a fixed set
+  // summoned by the task, an entityDead for a mob is a kill the bot is responsible for.
+  const killedEntities = {}
   bot.on('entityDead', (e) => {
-    if (e && e.type === 'player' && e.username && e.username !== bot.username) {
+    if (!e) return
+    if (e.type === 'player' && e.username && e.username !== bot.username) {
       killedPlayers.add(e.username)
+    } else if (e.type === 'mob' && e.name && bot._mbAttacked && bot._mbAttacked.has(e.id)) {
+      // Only count a mob the bot actually swung at — never one that died on its own (burning in
+      // daylight, drowning, fall damage), so the kill is genuinely attributable to the agent.
+      killedEntities[e.name] = (killedEntities[e.name] || 0) + 1
     }
   })
 
@@ -171,13 +179,19 @@ async function run({ task, model, log = console.log, verbose = false, onEvent })
       emit({ type: 'step', i: step + 1, max_steps: maxSteps, thought: decision.thought, action: { tool: decision.tool, args: decision.args }, result, ok, pos, inventory: readInventory(bot) })
 
       // Harness-owned success detection (don't trust the model's stop()).
-      if (checkSuccess({ inventory: readInventory(bot), killed_players: [...killedPlayers] }, task)) { endReason = 'success'; break }
+      if (checkSuccess({ inventory: readInventory(bot), killed_players: [...killedPlayers], killed_entities: killedEntities }, task)) { endReason = 'success'; break }
       if (botDied) { endReason = 'died'; break }
       if (done) { endReason = 'agent_stop'; break }
     }
 
+    // The bot "survived" only if the run went the full distance without dying/disconnecting —
+    // bailing early via stop() (agent_stop) does not count as surviving the night.
+    const survived = endReason === 'max_steps'
+    trace.final_state = { inventory: readInventory(bot), killed_players: [...killedPlayers], killed_entities: killedEntities, survived }
+    // Survival (and a kill landed on the very last step) can only be confirmed after the loop, so
+    // give checkSuccess one final say before we freeze ended_reason.
+    if (endReason !== 'success' && checkSuccess(trace.final_state, task)) endReason = 'success'
     trace.ended_reason = endReason
-    trace.final_state = { inventory: readInventory(bot), killed_players: [...killedPlayers] }
     emit({ type: 'run_end', ended_reason: endReason, duration_s: +((Date.now() - startedMs) / 1000).toFixed(1), final_inventory: trace.final_state.inventory })
   } catch (e) {
     log('Run error:', e.message)

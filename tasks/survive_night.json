@@ -1,0 +1,21 @@
+{
+  "id": "survive_night",
+  "title": "Survive the night",
+  "goal": "Stay alive until the run ends — do not die.",
+  "difficulty": 3,
+  "max_steps": 60,
+  "rationale": "Survival skill test. Night is locked on (doDaylightCycle off) with mob spawning ENABLED, so hostiles spawn around the bot. Armed with an iron_sword, wearing iron armor, and carrying 64 cobblestone, the model must keep itself alive for the WHOLE run — fighting in bursts with attack_entity, repositioning with move_to, or walling itself in with place_block (there is no eat action, so blocks + armor are its real survival tools). Surviving is only credited if the bot lasts the full duration; bailing early via stop() does not count. The harness reads real death events from the server, so a survived run means the server never reported the bot dead.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": true, "keepInventory": true },
+    "time": "midnight",
+    "weather": "clear",
+    "teleport": "spawn",
+    "clear_inventory": true,
+    "give": [
+      { "item": "iron_sword", "count": 1 },
+      { "item": "cobblestone", "count": 64 }
+    ],
+    "armor": { "head": "iron_helmet", "chest": "iron_chestplate", "legs": "iron_leggings", "feet": "iron_boots" }
+  },
+  "success": { "survived": true }
+}

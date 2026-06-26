@@ -33,6 +33,16 @@ async function applyTaskSetup(bot, task, log = () => {}) {
   }
   if (s.clear_inventory !== false) cmds.push(`/clear ${bot.username}`)
   for (const g of (s.give || [])) cmds.push(`/give ${bot.username} ${g.item} ${g.count || 1}`)
+  // Force-equip armor onto the bot deterministically (so a combat task starts it actually
+  // wearing protection instead of hoping the model equips each piece). Keys map to the four
+  // armor slots: head / chest / legs / feet.
+  const ARMOR_SLOTS = { head: 'armor.head', chest: 'armor.chest', legs: 'armor.legs', feet: 'armor.feet' }
+  for (const [slot, item] of Object.entries(s.armor || {})) {
+    const target = ARMOR_SLOTS[slot]
+    if (!target || !item) continue
+    const it = String(item).includes(':') ? item : `minecraft:${item}`
+    cmds.push(`/item replace entity ${bot.username} ${target} with ${it} 1`)
+  }
   // Summon mobs the task needs (e.g. a cow for beef, a sheep for wool) at an offset from the
   // bot, so PvP/attack tasks have a deterministic target instead of waiting on natural spawns.
   // Coordinates are relative (~) to the bot's post-teleport position; each extra copy is nudged

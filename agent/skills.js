@@ -948,7 +948,10 @@ async function attackUntilDead(bot, target, { maxHits } = {}) {
         // In range: face it and swing, paced to the ~0.6s attack cooldown so each hit lands
         // at full damage. GoalFollow keeps us in range while we trade blows.
         try { await bot.lookAt(target.position.offset(0, target.height ? target.height * 0.5 : 0.5, 0), true) } catch (_) {}
-        try { bot.attack(target); hits++ } catch (_) {}
+        // Record that the bot actually swung at this entity so the harness can attribute the
+        // kill to the bot (and NOT count mobs that died on their own — e.g. burning in daylight,
+        // drowning, or fall damage — which the model never touched).
+        try { bot.attack(target); hits++; (bot._mbAttacked || (bot._mbAttacked = new Set())).add(targetId) } catch (_) {}
         await sleep(620)
       } else {
         // Out of reach: let the dynamic GoalFollow keep closing the gap; just poll until we
