@@ -27,6 +27,7 @@ const fs = require('fs')
 const path = require('path')
 const { spawn } = require('child_process')
 const sm = require('../harness/server-manager')
+const { loadResults, deleteResultById, deleteAllResults } = require('../scoring/store')
 
 const PORT = parseInt(process.env.MINEBENCH_LIVE_PORT || '8099', 10)
 const DASH_DIR = __dirname
@@ -95,6 +96,23 @@ function regenerateHistory() {
   } catch (_) { return false }
 }
 
+function deleteOneRun(runId) {
+  const id = decodeURIComponent(String(runId || '')).trim()
+  if (!id) return { ok: false, code: 400, error: 'Missing run id.' }
+  const deleted = deleteResultById(id)
+  if (!deleted) return { ok: false, code: 404, error: 'Run not found.' }
+  if (!regenerateHistory()) return { ok: false, code: 500, error: 'Deleted the run, but failed to rebuild dashboard history.' }
+  broadcast({ type: 'history_updated' })
+  return { ok: true, deleted: id }
+}
+
+function deleteAllRuns() {
+  const deleted = deleteAllResults()
+  if (!regenerateHistory()) return { ok: false, code: 500, error: 'Deleted the runs, but failed to rebuild dashboard history.' }
+  broadcast({ type: 'history_updated' })
+  return { ok: true, deleted }
+}
+
 // ---- launch-from-page: task discovery + child process management ----
 
 function listTasks() {
@@ -122,7 +140,6 @@ function normalizeModelName(m) {
 function modelSuggestions() {
   const set = new Set()
   try {
-    const { loadResults } = require('../scoring/store')
     for (const r of loadResults()) {
       const m = normalizeModelName(r && r.scorecard && r.scorecard.model)
       if (m) set.add(m)
@@ -437,6 +454,19 @@ const server = http.createServer((req, res) => {
       models: modelSuggestions(),
       busy: isBusy()
     }))
+  }
+
+  if (url === '/runs' && req.method === 'DELETE') {
+    const r = deleteAllRuns()
+    res.writeHead(r.ok ? 200 : (r.code || 400), { 'content-type': 'application/json' })
+    return res.end(JSON.stringify(r.ok ? { ok: true, deleted: r.deleted } : { error: r.error }))
+  }
+
+  if (url.startsWith('/runs/') && req.method === 'DELETE') {
+    const runId = url.slice('/runs/'.length)
+    const r = deleteOneRun(runId)
+    res.writeHead(r.ok ? 200 : (r.code || 400), { 'content-type': 'application/json' })
+    return res.end(JSON.stringify(r.ok ? { ok: true, deleted: r.deleted } : { error: r.error }))
   }
 
   if (url === '/run' && req.method === 'POST') {

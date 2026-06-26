@@ -183,6 +183,71 @@
     { key: 'started_at', label: 'Started', num: true }
   ];
   let sortState = { key: 'started_at', dir: -1 };
+  let historyApiReady = false;
+  let historyDeleting = false;
+
+  function setHistoryMsg(text) {
+    const el = $('#history-msg');
+    if (!el) return;
+    el.textContent = text || '';
+  }
+
+  function syncHistoryActions() {
+    const bar = $('#history-actions');
+    const delAll = $('#delete-all-runs');
+    if (!bar || !delAll) return;
+    bar.classList.toggle('hidden', !historyApiReady);
+    delAll.disabled = !historyApiReady || historyDeleting || !(DATA.runs || []).length;
+  }
+
+  async function detectHistoryApi() {
+    try {
+      const res = await fetch('/state', { cache: 'no-store' });
+      historyApiReady = !!res.ok;
+    } catch (_) {
+      historyApiReady = false;
+    }
+    syncHistoryActions();
+    renderRuns();
+  }
+
+  async function deleteHistoryRun(runId, label) {
+    if (!historyApiReady || historyDeleting) return;
+    if (!confirm(`Delete run ${label || runId}?`)) return;
+    historyDeleting = true;
+    syncHistoryActions();
+    setHistoryMsg('Deleting run...');
+    try {
+      const res = await fetch('/runs/' + encodeURIComponent(runId), { method: 'DELETE' });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Delete failed (${res.status}).`);
+      setHistoryMsg('Run deleted. Reloading...');
+      location.reload();
+    } catch (e) {
+      setHistoryMsg(e.message);
+      historyDeleting = false;
+      syncHistoryActions();
+    }
+  }
+
+  async function deleteAllHistory() {
+    if (!historyApiReady || historyDeleting) return;
+    if (!confirm('Delete all previous runs?')) return;
+    historyDeleting = true;
+    syncHistoryActions();
+    setHistoryMsg('Deleting all runs...');
+    try {
+      const res = await fetch('/runs', { method: 'DELETE' });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Delete failed (${res.status}).`);
+      setHistoryMsg('All runs deleted. Reloading...');
+      location.reload();
+    } catch (e) {
+      setHistoryMsg(e.message);
+      historyDeleting = false;
+      syncHistoryActions();
+    }
+  }
 
   function sortedRuns() {
     const runs = (DATA.runs || []).slice();
@@ -201,8 +266,9 @@
   function renderRuns() {
     const table = $('#runs');
     table.innerHTML = '';
+    const cols = historyApiReady ? RUN_COLS.concat({ key: 'actions', label: 'Actions' }) : RUN_COLS;
     const headRow = h('tr');
-    for (const col of RUN_COLS) {
+    for (const col of cols) {
       const isSorted = sortState.key === col.key;
       const arrow = isSorted ? h('span', { class: 'arrow', text: sortState.dir < 0 ? ' ▼' : ' ▲' }) : null;
       headRow.appendChild(h('th', {
@@ -218,7 +284,7 @@
 
     const tbody = h('tbody');
     for (const r of sortedRuns()) {
-      tbody.appendChild(h('tr', { class: 'clickable', onclick: () => openRun(r.id) },
+      const tr = h('tr', { class: 'clickable', onclick: () => openRun(r.id) },
         h('td', { text: r.task_id }),
         h('td', { class: 'model-cell', text: r.model }),
         h('td', { class: 'num' }, h('span', { class: 'badge ' + (r.success ? 'ok' : 'err'), text: r.success ? 'success' : 'fail' })),
@@ -228,9 +294,21 @@
         h('td', { class: 'num', text: r.tool_errors == null ? '—' : String(r.tool_errors) }),
         h('td', { text: r.ended_reason || '—' }),
         h('td', { class: 'num', text: fmtDate(r.started_at) })
-      ));
+      );
+      if (historyApiReady) {
+        const actions = h('td', { class: 'run-delete-cell' },
+          h('button', {
+            class: 'btn-linklike',
+            type: 'button',
+            onclick: (e) => { e.stopPropagation(); deleteHistoryRun(r.id, `${r.task_id} · ${r.model}`); }
+          }, 'Delete')
+        );
+        tr.appendChild(actions);
+      }
+      tbody.appendChild(tr);
     }
     table.appendChild(tbody);
+    syncHistoryActions();
   }
 
   // ---- drill-down modal ------------------------------------------------------
@@ -342,6 +420,9 @@
     renderMatrix();
     renderRuns();
     wireModal();
+    const delAll = $('#delete-all-runs');
+    if (delAll) delAll.addEventListener('click', deleteAllHistory);
+    detectHistoryApi();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -341,6 +341,43 @@ table,
   color: #2b4455;
 }
 
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  margin: 6px 0 10px;
+}
+.history-msg {
+  color: #3d5563;
+  font-size: 13px;
+  font-weight: 600;
+}
+.btn-mini {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom-width: 3px;
+}
+.btn-danger {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,0)),
+    linear-gradient(180deg, #8f4a42, #5d2a25);
+}
+.btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
+.run-delete-cell { text-align: center; }
+.btn-linklike {
+  background: rgba(0,0,0,.18);
+  color: #f3f4f2;
+  border: 1px solid rgba(255,255,255,.14);
+  padding: 5px 9px;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-linklike:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-linklike:disabled { opacity: .4; cursor: not-allowed; }
+
 /* ── Run controls (launch from page) ─────────────────────────── */
 .run-controls {
   background:
