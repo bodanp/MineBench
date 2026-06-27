@@ -31,7 +31,9 @@
 //   score(trace, task)        -> scorecard
 //
 // Success DSL (v1): task.success = { "inventory": { "<item>": <minCount>, ... },
-//                                    "killed_player": "<username>" | ["<username>", ...] }
+//                                    "killed_player": "<username>" | ["<username>", ...],
+//                                    "killed_entity": "<type>" | { "<type>": <minCount>, ... },
+//                                    "survived": true }
 // Multiple keys are AND-ed. Extend here (placed/reach/etc.) as new task types appear — keep it
 // declarative so the Tasks owner (Role 5) never has to write engine code.
 // ─────────────────────────────────────────────
@@ -60,6 +62,28 @@ function checkSuccess(state, task) {
     const need = Array.isArray(spec.killed_player) ? spec.killed_player : [spec.killed_player]
     const killed = (state && state.killed_players) || []
     if (!need.every(n => killed.includes(n))) return false
+  }
+
+  // killed_entity: one or more MOB types the bot must have killed, each with a minimum count.
+  // A bare string means "kill at least one". The harness records a mob death (the server's
+  // entityDead packet) ONLY when the bot actually swung at that entity, so kills are genuinely
+  // attributable to the agent — mobs that die on their own (burning, drowning) never count.
+  // Never trust the model's own claim.
+  if (spec.killed_entity) {
+    const need = typeof spec.killed_entity === 'string'
+      ? { [spec.killed_entity]: 1 }
+      : spec.killed_entity
+    const killed = (state && state.killed_entities) || {}
+    for (const [type, min] of Object.entries(need)) {
+      if ((killed[type] || 0) < min) return false
+    }
+  }
+
+  // survived: the bot must still be alive at the end of the run (it lasted the full duration
+  // without dying). The harness sets state.survived true only after the run reaches max_steps
+  // alive, so this is meaningless mid-run and can never trigger an early success.
+  if (spec.survived) {
+    if (!(state && state.survived)) return false
   }
 
   return true

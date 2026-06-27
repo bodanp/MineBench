@@ -9,7 +9,7 @@
 const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
-const { score } = require('./scorer')
+const { score, checkSuccess } = require('./scorer')
 const { getMilestones, validateMilestones } = require('./milestones')
 
 const loadTask = (id) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tasks', `${id}.json`), 'utf8'))
@@ -135,6 +135,36 @@ ok('validateMilestones catches dangling deps and duplicate ids', () => {
   assert.ok(dangling.some(e => /unknown id "ghost"/.test(e)), 'reports dangling dep')
   const dup = validateMilestones({ milestones: [{ id: 'a', item: 'x' }, { id: 'a', item: 'y' }] })
   assert.ok(dup.some(e => /duplicate milestone id/.test(e)), 'reports duplicate id')
+})
+
+// 10. Combat success DSL: killed_entity counts real mob deaths; a bare string means "at least one".
+ok('killed_entity needs the required kill counts', () => {
+  const task = { id: 'z', success: { killed_entity: { zombie: 3 } } }
+  assert.strictEqual(checkSuccess({ killed_entities: { zombie: 3 } }, task), true, 'exact count succeeds')
+  assert.strictEqual(checkSuccess({ killed_entities: { zombie: 5 } }, task), true, 'more than enough succeeds')
+  assert.strictEqual(checkSuccess({ killed_entities: { zombie: 2 } }, task), false, 'short of count fails')
+  assert.strictEqual(checkSuccess({ killed_entities: {} }, task), false, 'no kills fails')
+  const bare = { id: 'z2', success: { killed_entity: 'skeleton' } }
+  assert.strictEqual(checkSuccess({ killed_entities: { skeleton: 1 } }, bare), true, 'string form = at least one')
+  assert.strictEqual(checkSuccess({ killed_entities: { zombie: 9 } }, bare), false, 'wrong type does not count')
+})
+
+// 11. Survival success DSL: only credited when the harness reports the bot stayed alive.
+ok('survived only succeeds when state.survived is true', () => {
+  const task = { id: 's', success: { survived: true } }
+  assert.strictEqual(checkSuccess({ survived: true }, task), true, 'alive at end succeeds')
+  assert.strictEqual(checkSuccess({ survived: false }, task), false, 'died fails')
+  assert.strictEqual(checkSuccess({}, task), false, 'unknown (mid-run) never succeeds early')
+})
+
+// 12. Shipped combat/survival tasks are well-formed and use the new success DSL.
+ok('combat and survival tasks load with valid success specs', () => {
+  const cz = loadTask('clear_zombies')
+  assert.deepStrictEqual(cz.success, { killed_entity: { zombie: 3 } }, 'clear_zombies kills 3 zombies')
+  assert.strictEqual(checkSuccess({ killed_entities: { zombie: 3 } }, cz), true)
+  const sn = loadTask('survive_night')
+  assert.deepStrictEqual(sn.success, { survived: true }, 'survive_night requires survival')
+  assert.strictEqual(checkSuccess({ survived: true }, sn), true)
 })
 
 console.log(`\n${passed} checks passed.`)

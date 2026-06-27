@@ -1,0 +1,19 @@
+{
+  "id": "clear_zombies",
+  "title": "Clear out the zombies",
+  "goal": "Find and kill all 3 zombies.",
+  "difficulty": 3,
+  "max_steps": 60,
+  "rationale": "Combat skill test. Night is locked on (doDaylightCycle off) so the zombies don't burn up on their own, and mob spawning is OFF so the only hostiles in the world are the 3 that are summoned ~8 blocks away — far enough that the bot is NOT instantly swarmed at spawn and has to actually locate and approach them with look_around + attack_entity. The bot starts wearing a full iron armor set and holding an iron_sword, so a well-played 3-zombie melee is winnable but punishes bad positioning. The harness only credits a kill the bot actually swung at (mobs that die on their own never count), and success is read from the server's real entityDead packets — never the model's claim.",
+  "setup": {
+    "gamerules": { "doDaylightCycle": false, "doWeatherCycle": false, "doMobSpawning": false, "keepInventory": true },
+    "time": "midnight",
+    "weather": "clear",
+    "teleport": "spawn",
+    "clear_inventory": true,
+    "give": [{ "item": "iron_sword", "count": 1 }],
+    "armor": { "head": "iron_helmet", "chest": "iron_chestplate", "legs": "iron_leggings", "feet": "iron_boots" },
+    "summon": [{ "entity": "zombie", "count": 3, "offset": [8, 0, 0] }]
+  },
+  "success": { "killed_entity": { "zombie": 3 } }
+}
